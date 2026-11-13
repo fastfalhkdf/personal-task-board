@@ -10,15 +10,17 @@
   index.html 只负责骨架与布局，不含业务逻辑（设计方案 §7.1）。
   逻辑一律挂在下列 js/* 模块上，由 js/app.js 动态 import 挂载（加载失败不阻塞）：
 
-    js/app.js       （卓江城）模块挂载入口
+    js/app.js       （卓江城）挂载入口 + 壳交互：视图切换、抽屉开合、dialog 的 data-close
     js/api.js       （卓江城）接口封装，按 docs/api-contract.md 写
     js/auth.js      （付佳宝）登录态、路由守卫 → 操作 #email #password #login #auth-error #logout #user-name
     js/board.js     （卓江城）四列渲染、拖拽、排序 → 操作 #board .column-body[data-status] .column-count[data-count]
     js/task-card.js （卓江城）卡片渲染与编辑弹窗 → 操作 .task-card、#task-modal 内 #task-* 字段
     js/stats.js     （卓江城）统计面板 → 操作 #stats-panel #stats-today-count #stats-overdue-count #stats-done-rate #stats-today #stats-bars
-    js/chat.js      （付佳宝）对话抽屉 → 操作 #messages #question #send #trace #drawer-toggle
+    js/chat.js      （付佳宝）对话内容 → 操作 #messages #question #send #trace（抽屉开关归 app.js）
     js/pending.js   （付佳宝）待确认 diff 卡片 → 操作 #pending（每项 .pending，含确认/取消按钮）
     js/members.js   （付佳宝）成员面板与指派下拉 → 操作 #member-list #member-modal #task-assignee
+
+  模块统一导出 `async function init(ctx)`，ctx = { api, user, getUser, toast, onLoggedIn, onLogout, closeDrawer }。
 
   约定：状态视图切换用 #app 的 .hidden 类；抽屉开合用 body 上的 .drawer-open 类；
   弹窗用原生 <dialog> 的 showModal()/close()；全局提示写 #toast 的文本并摘掉 .hidden。
