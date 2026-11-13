@@ -118,6 +118,8 @@
   }
 
   .btn-danger { background: var(--danger); }
+  /* 删除二次确认的中间态（task-card.js 里 armDeleteButton 加类） */
+  .btn-danger.is-armed { box-shadow: 0 0 0 3px var(--danger-wash); filter: brightness(1.08); }
 
   .icon-btn {
     border: 1px solid transparent;
@@ -402,6 +404,7 @@
 
   .task-card:hover { transform: translateY(-1px); box-shadow: 0 10px 22px #26342c1a; }
   .task-card:active { cursor: grabbing; }
+  .task-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .task-card.is-dragging { opacity: 0.55; }
   .task-card h3 { font-size: 14px; line-height: 1.45; }
   .task-card p { margin: 5px 0 0; color: var(--muted); font-size: 12.5px; }

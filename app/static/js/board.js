@@ -2,15 +2,17 @@
  * 四列看板（设计方案 §7.1 的 js/board.js，卓江城维护）。
  *
  * 职责：把任务列表渲染成 todo/in_progress/blocked/done 四列，维护列计数与空态，
- * 并让顶栏的项目切换、筛选栏对当前数据生效。
+ * 并让顶栏的项目切换、筛选栏对当前数据生效；新建/编辑/删除的落库动作也在这里，
+ * 弹窗本身交给 task-card.js（mountEditor）。
  *
  * 数据来源：D1 接口还没落地（设计方案 §8 卓江城那条写的是"先用契约字段 mock"），
  * 所以默认走 MOCK_TASKS。程熙的 GET /api/board 上线后，把下面 USE_MOCK 改成 false，
  * 或者直接删掉 mock 分支即可——渲染、计数、筛选的逻辑都不用动。
  *
- * D2 还要补：拖拽换列与列内排序（PATCH status / sort_order）、点卡片打开编辑弹窗。
+ * D2 还要补：拖拽换列与列内排序（PATCH status / sort_order）。
  */
 import api from './api.js';
+import { cardHtml, mountEditor } from './task-card.js';
 
 const USE_MOCK = true;
 
@@ -21,11 +23,17 @@ const COLUMNS = [
   { status: 'done', title: '已完成' },
 ];
 
-const PRIORITY_LABEL = { high: '高', medium: '中', low: '低' };
-
 const MOCK_PROJECTS = [
   { id: 1, name: 'AI 学习', color: '#4f7f63' },
   { id: 2, name: '前端看板', color: '#b9741f' },
+];
+
+const MOCK_MEMBERS = [
+  { id: 1, name: '卓江城' },
+  { id: 2, name: '付佳宝' },
+  { id: 3, name: '程熙' },
+  { id: 4, name: '郑伟健' },
+  { id: 5, name: '戴罗轩' },
 ];
 
 /** 按 design §4.2 的字段造数据：含 assignee/tags/sort_order，字段跟契约保持一致。 */
@@ -135,6 +143,7 @@ const state = {
   user: null,
   tasks: [],
   projects: [],
+  members: [],
   projectId: '',
   filters: { priority: '', assignee: '', tag: '', q: '', due: '' },
 };
@@ -166,17 +175,6 @@ function escapeHtml(value) {
   })[char]);
 }
 
-function dueLabel(task) {
-  const diff = daysFromToday(task.due_date);
-  if (diff === null) return { text: '', overdue: false };
-  if (task.status === 'done') return { text: `${task.due_date.slice(5)} 完成`, overdue: false };
-  if (diff < 0) return { text: `逾期 ${Math.abs(diff)} 天`, overdue: true };
-  if (diff === 0) return { text: '今天到期', overdue: true };
-  if (diff === 1) return { text: '明天到期', overdue: false };
-  if (diff <= 7) return { text: `${diff} 天后`, overdue: false };
-  return { text: task.due_date.slice(5), overdue: false };
-}
-
 /* ---------- 数据 ---------- */
 
 async function loadTasks() {
@@ -192,6 +190,77 @@ async function loadTasks() {
 async function loadProjects() {
   if (USE_MOCK) return MOCK_PROJECTS;
   return api.projects.list().then((result) => result.items);
+}
+
+async function loadMembers() {
+  if (USE_MOCK) return MOCK_MEMBERS;
+  if (!state.projectId) return [];
+  return api.members.list(state.projectId);
+}
+
+function projectName(projectId) {
+  const project = state.projects.find((item) => Number(item.id) === Number(projectId));
+  return project ? project.name : '';
+}
+
+function memberName(memberId) {
+  const member = state.members.find((item) => Number(item.id) === Number(memberId));
+  return member ? member.name : '';
+}
+
+function nextMockId() {
+  return MOCK_TASKS.reduce((max, task) => Math.max(max, Number(task.id) || 0), 0) + 1;
+}
+
+function nextSortOrder(status) {
+  const orders = MOCK_TASKS.filter((task) => task.status === status).map(
+    (task) => Number(task.sort_order) || 0,
+  );
+  return (orders.length ? Math.max(...orders) : 0) + 1024;
+}
+
+/**
+ * 保存：mock 模式直接改内存里的 MOCK_TASKS，接真实接口时换成 api.tasks.create/update。
+ * @param {{id: number|null, payload: Record<string, unknown>, mode: 'create'|'update'}} input
+ */
+async function saveTask({ id, payload, mode }) {
+  if (USE_MOCK) {
+    if (mode === 'create') {
+      MOCK_TASKS.push({
+        ...payload,
+        id: nextMockId(),
+        project_name: projectName(payload.project_id),
+        assignee_name: memberName(payload.assignee_id),
+        sort_order: nextSortOrder(payload.status),
+      });
+    } else {
+      const task = MOCK_TASKS.find((item) => Number(item.id) === Number(id));
+      if (!task) throw new Error('任务不存在');
+      Object.assign(task, payload, {
+        project_name: projectName(payload.project_id),
+        assignee_name: memberName(payload.assignee_id),
+      });
+    }
+  } else if (mode === 'create') {
+    await api.tasks.create(payload);
+  } else {
+    await api.tasks.update(id, payload);
+  }
+  await refresh();
+  state.ctx.toast(`${mode === 'create' ? '已创建' : '已保存'}${USE_MOCK ? '（mock 模式）' : ''}`);
+}
+
+/** @param {number} id */
+async function deleteTask(id) {
+  if (USE_MOCK) {
+    const index = MOCK_TASKS.findIndex((item) => Number(item.id) === Number(id));
+    if (index < 0) throw new Error('任务不存在');
+    MOCK_TASKS.splice(index, 1);
+  } else {
+    await api.tasks.remove(id);
+  }
+  await refresh();
+  state.ctx.toast(`已删除${USE_MOCK ? '（mock 模式）' : ''}`);
 }
 
 /* ---------- 筛选 ---------- */
@@ -222,34 +291,6 @@ function visibleTasks() {
 }
 
 /* ---------- 渲染 ---------- */
-
-function cardHtml(task) {
-  const due = dueLabel(task);
-  const priority = PRIORITY_LABEL[task.priority] || '中';
-  const tags = (task.tags || [])
-    .map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`)
-    .join('');
-  const assignee = task.assignee_name
-    ? `<span class="assignee" title="指派给 ${escapeHtml(task.assignee_name)}">${escapeHtml(task.assignee_name.slice(0, 1))}</span>`
-    : '';
-  const dueHtml = due.text
-    ? `<span class="due${due.overdue ? ' is-overdue' : ''}">${escapeHtml(due.text)}</span>`
-    : '';
-  const description = task.description
-    ? `<p>${escapeHtml(task.description)}</p>`
-    : '';
-  return (
-    `<article class="task-card" data-id="${escapeHtml(task.id)}" role="listitem">` +
-    `<h3>${escapeHtml(task.title)}</h3>` +
-    description +
-    '<div class="task-meta">' +
-    `<span class="badge-priority is-${escapeHtml(task.priority || 'medium')}">${priority}</span>` +
-    dueHtml +
-    tags +
-    assignee +
-    '</div></article>'
-  );
-}
 
 function renderColumn(column, tasks) {
   const body = document.querySelector(`.column-body[data-status="${column.status}"]`);
@@ -352,6 +393,12 @@ function wireProjectSwitch() {
   document.querySelector('#project-switcher')?.addEventListener('change', (event) => {
     state.projectId = event.target.value;
     renderProjects();
+    loadMembers()
+      .then((members) => {
+        state.members = members;
+        renderMemberOptions();
+      })
+      .catch(() => {});
     refresh().catch((error) => state.ctx.toast(error.message));
   });
 
@@ -362,6 +409,11 @@ function wireProjectSwitch() {
     renderProjects();
     refresh().catch((error) => state.ctx.toast(error.message));
   });
+
+  // 项目 CRUD 是戴罗轩的 /api/projects，接口未落地前先如实提示，不做假的新建。
+  document.querySelector('#project-new')?.addEventListener('click', () => {
+    state.ctx.toast('项目新建等 /api/projects 接口落地后再接');
+  });
 }
 
 /* ---------- 入口 ---------- */
@@ -369,14 +421,55 @@ function wireProjectSwitch() {
 export async function init(ctx) {
   state.ctx = ctx;
   state.user = ctx.user;
+
   wireFilters();
   wireProjectSwitch();
+
   state.projects = await loadProjects().catch(() => []);
+  state.members = await loadMembers().catch(() => []);
   renderProjects();
+  renderMemberOptions();
+
+  mountEditor({
+    getProjects: () => state.projects,
+    getMembers: () => state.members,
+    getTask: (id) => state.tasks.find((task) => String(task.id) === String(id)) || null,
+    getDefaults: () => ({ projectId: state.projectId }),
+    onSave: saveTask,
+    onDelete: deleteTask,
+  });
+
   await refresh();
 }
 
 async function refresh() {
   state.tasks = await loadTasks();
+  renderTagOptions();
   renderBoard();
 }
+
+/** 把 mock/真实成员填进筛选栏和弹窗的指下拉。 */
+function renderMemberOptions() {
+  const select = document.querySelector('#filter-assignee');
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = ['<option value="">全部成员</option>', '<option value="me">仅看我</option>']
+    .concat(
+      state.members.map(
+        (member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.name)}</option>`,
+      ),
+    )
+    .join('');
+  select.value = current;
+}
+
+/** 标签候选：从现有任务的标签里收集，供 #filter-tag 的 datalist 联想。 */
+function renderTagOptions() {
+  const datalist = document.querySelector('#tag-options');
+  if (!datalist) return;
+  const tags = Array.from(
+    new Set(state.tasks.flatMap((task) => task.tags || []).filter(Boolean)),
+  );
+  datalist.innerHTML = tags.map((tag) => `<option value="${escapeHtml(tag)}"></option>`).join('');
+}
+
