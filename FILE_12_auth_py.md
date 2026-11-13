@@ -10,6 +10,7 @@
 
 ````python
 """bcrypt 密码、JWT、Cookie/Bearer 双通道认证与资源归属校验。"""
+
 from __future__ import annotations
 
 import datetime as dt
@@ -29,9 +30,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(
-        password.encode("utf-8"), bcrypt.gensalt(rounds=10)
-    ).decode("ascii")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=10)).decode("ascii")
 
 
 def verify_password(password: str, hashed: str) -> bool:
@@ -62,9 +61,7 @@ def decode_token(token: str, settings: Settings) -> dict:
 
 
 def current_user(
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
-    ] = None,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)] = None,
     access_token: Annotated[str | None, Cookie()] = None,
     db: Session = Depends(get_session),
 ) -> User:

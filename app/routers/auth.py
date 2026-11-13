@@ -1,4 +1,5 @@
 """注册、登录、退出和当前用户。"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
