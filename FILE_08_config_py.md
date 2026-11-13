@@ -10,6 +10,7 @@
 
 ````python
 """邮件与公文助手配置。"""
+
 from __future__ import annotations
 
 from functools import lru_cache

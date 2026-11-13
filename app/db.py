@@ -1,4 +1,5 @@
 """SQLAlchemy 2.0 数据库初始化与会话依赖。"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -43,6 +44,7 @@ def init_db(settings: Settings) -> Engine:
     engine = create_engine(url, future=True, echo=False, **kwargs)
 
     if url.startswith("sqlite"):
+
         @event.listens_for(engine, "connect")
         def _enable_sqlite_foreign_keys(dbapi_connection, _record):  # noqa: ANN001
             cursor = dbapi_connection.cursor()

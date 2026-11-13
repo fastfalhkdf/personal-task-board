@@ -1,4 +1,4 @@
-﻿"""Agent 工具与写确认用例（郑伟健 · 设计方案 §6）。
+"""Agent 工具与写确认用例（郑伟健 · 设计方案 §6）。
 
 全部离线：用 Fake LLM 注入脚本化的工具调用，不联网、不消耗额度。
 覆盖：三件套强制、before 快照、pending 可列出、cancel 后不可确认、
@@ -153,7 +153,9 @@ class AgentToolTests(unittest.TestCase):
     def test_04_cancel_blocks_confirm(self):
         payload = self._run(
             [
-                call("create_task", {"project_id": 1, "title": "要被取消", "due_date": "2026-12-02"}),
+                call(
+                    "create_task", {"project_id": 1, "title": "要被取消", "due_date": "2026-12-02"}
+                ),
                 say("请确认"),
             ]
         )
@@ -180,7 +182,9 @@ class AgentToolTests(unittest.TestCase):
     def test_06_confirm_is_idempotent_with_diff(self):
         payload = self._run(
             [
-                call("create_task", {"project_id": 1, "title": "幂等任务", "due_date": "2026-12-03"}),
+                call(
+                    "create_task", {"project_id": 1, "title": "幂等任务", "due_date": "2026-12-03"}
+                ),
                 say("请确认"),
             ]
         )
@@ -238,12 +242,5 @@ class AgentToolTests(unittest.TestCase):
         self.assertEqual(payload["pending_writes"], [], "越权项目不该生成待确认")
 
 
-
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-
-
-
-
-
-

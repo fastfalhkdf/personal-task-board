@@ -1,4 +1,4 @@
-﻿"""ReAct Agent 循环：决策 → 工具 → 观察 → 收敛（郑伟健 · 设计方案 §6.2）。
+"""ReAct Agent 循环：决策 → 工具 → 观察 → 收敛（郑伟健 · 设计方案 §6.2）。
 
 相对原版的三处改动：
 1. 支持前端带上最近 N 轮对话（history），解决「再把它移到进行中」这类指代；
@@ -77,8 +77,16 @@ def _after_preview(name: str, args: dict, before: dict) -> dict:
             "tags": args.get("tags") or [],
         }
     merged = dict(before or {})
-    for key in ("title", "description", "status", "priority", "due_date",
-                "project_id", "assignee_id", "tags"):
+    for key in (
+        "title",
+        "description",
+        "status",
+        "priority",
+        "due_date",
+        "project_id",
+        "assignee_id",
+        "tags",
+    ):
         if key in args:
             merged[key] = args[key]
     return merged
@@ -96,7 +104,7 @@ def _trim_history(history: list[dict] | None) -> list[dict]:
         content = item.get("content")
         if role in ("user", "assistant") and isinstance(content, str) and content.strip():
             cleaned.append({"role": role, "content": content[:4000]})
-    return cleaned[-MAX_HISTORY_ROUNDS * 2:]
+    return cleaned[-MAX_HISTORY_ROUNDS * 2 :]
 
 
 async def run_agent(
@@ -129,8 +137,9 @@ async def run_agent(
         if not tool_calls:
             text = msg.content or ""
             steps.append(Step("answer", text))
-            return Result(text, steps, calls, int((time.perf_counter() - started) * 1000),
-                          "answer", pending)
+            return Result(
+                text, steps, calls, int((time.perf_counter() - started) * 1000), "answer", pending
+            )
 
         messages.append(
             {
@@ -159,29 +168,38 @@ async def run_agent(
                     args = {}
             except json.JSONDecodeError:
                 args = {}
-            steps.append(Step("tool_call", json.dumps(args, ensure_ascii=False),
-                              tool=name, args=args))
+            steps.append(
+                Step("tool_call", json.dumps(args, ensure_ascii=False), tool=name, args=args)
+            )
 
             if name in WRITE_TOOLS and confirm:
                 error = validate(name, args) or precheck(db, name, args, uid)
                 if error:
                     result = {"error": error}
-                    steps.append(Step("tool_result", json.dumps(result, ensure_ascii=False),
-                                      tool=name))
+                    steps.append(
+                        Step("tool_result", json.dumps(result, ensure_ascii=False), tool=name)
+                    )
                     messages.append(
-                        {"role": "tool", "tool_call_id": tc.id,
-                         "content": json.dumps(result, ensure_ascii=False)}
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json.dumps(result, ensure_ascii=False),
+                        }
                     )
                     continue
 
                 before = snapshot(db, name, args, uid)
                 if name == "update_task" and not before:
                     result = {"error": "任务不存在或无权修改"}
-                    steps.append(Step("tool_result", json.dumps(result, ensure_ascii=False),
-                                      tool=name))
+                    steps.append(
+                        Step("tool_result", json.dumps(result, ensure_ascii=False), tool=name)
+                    )
                     messages.append(
-                        {"role": "tool", "tool_call_id": tc.id,
-                         "content": json.dumps(result, ensure_ascii=False)}
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json.dumps(result, ensure_ascii=False),
+                        }
                     )
                     continue
 
@@ -220,11 +238,13 @@ async def run_agent(
                 except Exception as exc:  # noqa: BLE001 工具异常不该打崩整轮
                     result = {"error": str(exc)}
 
-            steps.append(Step("tool_result", json.dumps(result, ensure_ascii=False),
-                              tool=name))
+            steps.append(Step("tool_result", json.dumps(result, ensure_ascii=False), tool=name))
             messages.append(
-                {"role": "tool", "tool_call_id": tc.id,
-                 "content": json.dumps(result, ensure_ascii=False)}
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": json.dumps(result, ensure_ascii=False),
+                }
             )
 
     steps.append(Step("error", f"达到步数上限 {limit}，已强制停止"))
@@ -236,4 +256,3 @@ async def run_agent(
         "max_steps",
         pending,
     )
-

@@ -124,9 +124,7 @@ def change_member_role(
         owners = db.execute(
             select(func.count())
             .select_from(ProjectMember)
-            .where(
-                ProjectMember.project_id == project_id, ProjectMember.role == "owner"
-            )
+            .where(ProjectMember.project_id == project_id, ProjectMember.role == "owner")
         ).scalar_one()
         if owners <= 1:
             raise HTTPException(status_code=400, detail="项目至少保留一名 owner")

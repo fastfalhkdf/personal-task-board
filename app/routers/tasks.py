@@ -38,9 +38,7 @@ def _now() -> dt.datetime:
 
 def _visible_cond(user_id: int):
     """可见性 = 自己的任务 ∪ 自己所属项目的任务（§4.3）。"""
-    member_projects = select(ProjectMember.project_id).where(
-        ProjectMember.user_id == user_id
-    )
+    member_projects = select(ProjectMember.project_id).where(ProjectMember.user_id == user_id)
     return or_(Task.owner_id == user_id, Task.project_id.in_(member_projects))
 
 
@@ -161,9 +159,7 @@ def today_tasks(
 
     todo_today = _rows((Task.due_date == day) & (Task.status != "done"))
     overdue = _rows((Task.due_date < day) & (Task.status != "done"))
-    total = db.execute(
-        select(func.count(Task.id)).where(_visible_cond(user.id))
-    ).scalar_one()
+    total = db.execute(select(func.count(Task.id)).where(_visible_cond(user.id))).scalar_one()
     done = db.execute(
         select(func.count(Task.id)).where(_visible_cond(user.id), Task.status == "done")
     ).scalar_one()

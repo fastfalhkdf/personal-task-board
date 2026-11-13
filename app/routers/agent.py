@@ -1,4 +1,4 @@
-﻿"""Agent HTTP 接口（郑伟健 · 设计方案 §5.3 / §6.3）。
+"""Agent HTTP 接口（郑伟健 · 设计方案 §5.3 / §6.3）。
 
 相对原版的改动：
 - /run 接受 history（最近 10 轮），并把错误分级成 503/502/500，不再回显上游原文；
@@ -188,11 +188,15 @@ async def run(
 def pending(user: CurrentUser, db: DbSession):
     """我的待确认列表；顺带把已过期的标成 expired，避免前端点了才报错。"""
     now = dt.datetime.now(dt.UTC).replace(tzinfo=None)
-    rows = db.execute(
-        select(PendingAction)
-        .where(PendingAction.owner_id == user.id, PendingAction.status == "pending")
-        .order_by(PendingAction.expires_at.desc())
-    ).scalars().all()
+    rows = (
+        db.execute(
+            select(PendingAction)
+            .where(PendingAction.owner_id == user.id, PendingAction.status == "pending")
+            .order_by(PendingAction.expires_at.desc())
+        )
+        .scalars()
+        .all()
+    )
     items: list[PendingItemOut] = []
     for row in rows:
         if row.expires_at < now:
@@ -301,4 +305,3 @@ def confirm(
     done.confirmed_at = now
     db.commit()
     return ConfirmOut(ok=True, tool=done.tool, result=payload, before=before, after=merged)
-

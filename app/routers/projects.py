@@ -60,9 +60,7 @@ class ProjectPatchIn(BaseModel):
 
 
 def _count(db: Session, model, *conditions) -> int:
-    return db.execute(
-        select(func.count()).select_from(model).where(*conditions)
-    ).scalar_one()
+    return db.execute(select(func.count()).select_from(model).where(*conditions)).scalar_one()
 
 
 def _project_out(db: Session, project: Project, role: str) -> dict:
@@ -80,11 +78,7 @@ def _project_out(db: Session, project: Project, role: str) -> dict:
 
 
 def _task_card(db: Session, task: Task) -> dict:
-    tags = (
-        db.execute(select(TaskTag.tag).where(TaskTag.task_id == task.id))
-        .scalars()
-        .all()
-    )
+    tags = db.execute(select(TaskTag.tag).where(TaskTag.task_id == task.id)).scalars().all()
     return {
         "id": task.id,
         "title": task.title,
@@ -175,12 +169,8 @@ def delete_project(
     assert_project_owner(db, project_id, user)
     if not confirm:
         # 项目删除会级联删任务，必须显式确认；默认 false 防误删。
-        raise HTTPException(
-            status_code=400, detail="删除项目会级联删除任务，需 confirm=true"
-        )
-    tasks = (
-        db.execute(select(Task).where(Task.project_id == project_id)).scalars().all()
-    )
+        raise HTTPException(status_code=400, detail="删除项目会级联删除任务，需 confirm=true")
+    tasks = db.execute(select(Task).where(Task.project_id == project_id)).scalars().all()
     for task in tasks:
         db.delete(task)
     db.delete(project)
@@ -196,9 +186,7 @@ def project_stats(
 ):
     _project_or_404(db, project_id)
     assert_project_member(db, project_id, user)
-    tasks = (
-        db.execute(select(Task).where(Task.project_id == project_id)).scalars().all()
-    )
+    tasks = db.execute(select(Task).where(Task.project_id == project_id)).scalars().all()
     by_status = {status: 0 for status in STATUSES}
     by_priority = {"low": 0, "medium": 0, "high": 0}
     for task in tasks:
@@ -214,9 +202,7 @@ def project_stats(
         "done_rate": round(done / total, 2) if total else 0.0,
         "by_status": by_status,
         "by_priority": by_priority,
-        "member_count": _count(
-            db, ProjectMember, ProjectMember.project_id == project_id
-        ),
+        "member_count": _count(db, ProjectMember, ProjectMember.project_id == project_id),
     }
 
 
@@ -231,9 +217,7 @@ def board(
     assert_project_member(db, project_id, user)
     tasks = (
         db.execute(
-            select(Task)
-            .where(Task.project_id == project_id)
-            .order_by(Task.sort_order, Task.id)
+            select(Task).where(Task.project_id == project_id).order_by(Task.sort_order, Task.id)
         )
         .scalars()
         .all()
@@ -243,8 +227,6 @@ def board(
         if task.status in columns:
             columns[task.status].append(_task_card(db, task))
     return {
-        "project": _project_out(
-            db, project, project_role(db, project_id, user.id) or "member"
-        ),
+        "project": _project_out(db, project, project_role(db, project_id, user.id) or "member"),
         "columns": columns,
     }

@@ -39,9 +39,7 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     color: Mapped[str] = mapped_column(String(20), default="")
     # 追加字段：项目简介（设计方案 §4.2）
@@ -57,18 +55,14 @@ class ProjectMember(Base):
 
     __tablename__ = "project_members"
     __table_args__ = (
-        UniqueConstraint(
-            "project_id", "user_id", name="uq_project_members_project_user"
-        ),
+        UniqueConstraint("project_id", "user_id", name="uq_project_members_project_user"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), index=True
     )
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     role: Mapped[str] = mapped_column(String(20), default="member")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -78,9 +72,7 @@ class Task(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # owner_id 语义：创建者（原版即如此，协作化后继续沿用）
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     project_id: Mapped[int | None] = mapped_column(
         ForeignKey("projects.id"), nullable=True, index=True
     )
@@ -119,9 +111,7 @@ class PendingAction(Base):
     __tablename__ = "pending_actions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     tool: Mapped[str] = mapped_column(String(60))
     args_json: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="pending")

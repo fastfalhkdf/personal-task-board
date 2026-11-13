@@ -367,9 +367,7 @@ def execute(name: str, args: dict, db, uid: int, commit: bool = True) -> dict:
         total = len(rows)
         done = sum(1 for r in rows if r[0].status == "done")
         overdue = sum(
-            1
-            for r in rows
-            if r[0].due_date and r[0].due_date < today and r[0].status != "done"
+            1 for r in rows if r[0].due_date and r[0].due_date < today and r[0].status != "done"
         )
         due_today = sum(1 for r in rows if r[0].due_date == today and r[0].status != "done")
         by_status = {s: 0 for s in STATUSES}
@@ -393,9 +391,11 @@ def execute(name: str, args: dict, db, uid: int, commit: bool = True) -> dict:
         }
 
     if name == "list_projects":
-        member_ids = db.execute(select(ProjectMember.project_id).where(
-            ProjectMember.user_id == uid
-        )).scalars().all()
+        member_ids = (
+            db.execute(select(ProjectMember.project_id).where(ProjectMember.user_id == uid))
+            .scalars()
+            .all()
+        )
         if not member_ids:
             return {"items": [], "returned": 0, "truncated": False}
         rows = db.execute(
@@ -525,9 +525,7 @@ def execute(name: str, args: dict, db, uid: int, commit: bool = True) -> dict:
             task.due_date = _parse_date(args["due_date"])
         if "status" in args:
             task.completed_at = (
-                dt.datetime.now(dt.UTC).replace(tzinfo=None)
-                if args["status"] == "done"
-                else None
+                dt.datetime.now(dt.UTC).replace(tzinfo=None) if args["status"] == "done" else None
             )
         if "tags" in args:
             db.execute(TaskTag.__table__.delete().where(TaskTag.task_id == task.id))

@@ -1,4 +1,5 @@
 """OpenAI 兼容模型调用与 Function Calling 工具定义。"""
+
 from __future__ import annotations
 
 import time
@@ -42,13 +43,9 @@ class LLM:
                 continue
             if first_chunk:
                 first_chunk = False
-                yield "ttft", {
-                    "ms": int((time.perf_counter() - started) * 1000)
-                }
+                yield "ttft", {"ms": int((time.perf_counter() - started) * 1000)}
             yield "delta", {"text": delta}
-        yield "done", {
-            "total_ms": int((time.perf_counter() - started) * 1000)
-        }
+        yield "done", {"total_ms": int((time.perf_counter() - started) * 1000)}
 
     async def with_tools(
         self,

@@ -6,9 +6,7 @@ from .models import Project, ProjectMember, Task, User
 
 
 def seed(db: Session):
-    u = db.execute(
-        select(User).where(User.email == "demo@tasks.dev")
-    ).scalar_one_or_none()
+    u = db.execute(select(User).where(User.email == "demo@tasks.dev")).scalar_one_or_none()
     if not u:
         u = User(
             email="demo@tasks.dev",

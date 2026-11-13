@@ -40,9 +40,7 @@ class MemberApiTests(unittest.TestCase):
             json={"email": email, "name": tag, "password": "password1"},
         )
         self.assertEqual(r.status_code, 201, r.text)
-        r = self.c.post(
-            "/api/auth/login", json={"email": email, "password": "password1"}
-        )
+        r = self.c.post("/api/auth/login", json={"email": email, "password": "password1"})
         self.assertEqual(r.status_code, 200, r.text)
         return r.json()["token"], r.json()["user"]["id"], email
 
@@ -111,9 +109,7 @@ class MemberApiTests(unittest.TestCase):
         self.assertEqual(self._invite(tok_o, project["id"], email_m).status_code, 201)
 
         # 普通成员移除 owner：404（权限判定不泄露存在性）
-        r = self.c.delete(
-            f"/api/projects/{project['id']}/members/{uid_o}", headers=self._h(tok_m)
-        )
+        r = self.c.delete(f"/api/projects/{project['id']}/members/{uid_o}", headers=self._h(tok_m))
         self.assertEqual(r.status_code, 404, r.text)
         # 普通成员邀请新人：404
         _, _, other_email = self._login("rm-x")
@@ -145,9 +141,7 @@ class MemberApiTests(unittest.TestCase):
             headers=self._h(tok),
         )
         self.assertEqual(r.status_code, 200, r.text)
-        r = self.c.delete(
-            f"/api/projects/{project['id']}/members/{uid_m}", headers=self._h(tok)
-        )
+        r = self.c.delete(f"/api/projects/{project['id']}/members/{uid_m}", headers=self._h(tok))
         self.assertEqual(r.status_code, 204, r.text)
         r = self.c.get(f"/api/projects/{project['id']}/members", headers=self._h(tok))
         self.assertEqual(r.json()["total"], 1)
@@ -175,9 +169,7 @@ class MemberApiTests(unittest.TestCase):
 
         r = self.c.delete(f"/api/projects/{project['id']}", headers=self._h(tok_o))
         self.assertEqual(r.status_code, 400, r.text)  # 未确认，拒绝级联删
-        r = self.c.delete(
-            f"/api/projects/{project['id']}?confirm=true", headers=self._h(tok_o)
-        )
+        r = self.c.delete(f"/api/projects/{project['id']}?confirm=true", headers=self._h(tok_o))
         self.assertEqual(r.status_code, 204, r.text)
         r = self.c.get("/api/projects", headers=self._h(tok_o))
         self.assertFalse(any(x["id"] == project["id"] for x in r.json()["items"]))

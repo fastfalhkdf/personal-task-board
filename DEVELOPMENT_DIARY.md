@@ -126,6 +126,7 @@ volumes:
 
 ````python
 """邮件与公文助手配置。"""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -167,6 +168,7 @@ def get_settings() -> Settings:
 
 ````python
 """SQLAlchemy 2.0 数据库初始化与会话依赖。"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -211,6 +213,7 @@ def init_db(settings: Settings) -> Engine:
     engine = create_engine(url, future=True, echo=False, **kwargs)
 
     if url.startswith("sqlite"):
+
         @event.listens_for(engine, "connect")
         def _enable_sqlite_foreign_keys(dbapi_connection, _record):  # noqa: ANN001
             cursor = dbapi_connection.cursor()
@@ -257,39 +260,124 @@ def db_note() -> str:
 ````python
 from __future__ import annotations
 import datetime as dt
-from sqlalchemy import Date,DateTime,ForeignKey,Integer,String,Text,func
-from sqlalchemy.orm import Mapped,mapped_column
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
+
+
 class User(Base):
- __tablename__="users";id:Mapped[int]=mapped_column(Integer,primary_key=True);email:Mapped[str]=mapped_column(String(120),unique=True,index=True);name:Mapped[str]=mapped_column(String(60));password_hash:Mapped[str]=mapped_column(String(200));created_at:Mapped[dt.datetime]=mapped_column(DateTime,server_default=func.now())
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    password_hash: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Project(Base):
- __tablename__="projects";id:Mapped[int]=mapped_column(Integer,primary_key=True);owner_id:Mapped[int]=mapped_column(ForeignKey("users.id",ondelete="CASCADE"),index=True);name:Mapped[str]=mapped_column(String(120));color:Mapped[str]=mapped_column(String(20),default="")
+    __tablename__ = "projects"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    color: Mapped[str] = mapped_column(String(20), default="")
+
+
 class Task(Base):
- __tablename__="tasks";id:Mapped[int]=mapped_column(Integer,primary_key=True);owner_id:Mapped[int]=mapped_column(ForeignKey("users.id",ondelete="CASCADE"),index=True);project_id:Mapped[int|None]=mapped_column(ForeignKey("projects.id"),nullable=True);title:Mapped[str]=mapped_column(String(200));description:Mapped[str]=mapped_column(Text,default="");status:Mapped[str]=mapped_column(String(20),default="todo");priority:Mapped[str]=mapped_column(String(20),default="medium");due_date:Mapped[dt.date|None]=mapped_column(Date,nullable=True);created_at:Mapped[dt.datetime]=mapped_column(DateTime,server_default=func.now());updated_at:Mapped[dt.datetime]=mapped_column(DateTime,server_default=func.now(),onupdate=func.now())
+    __tablename__ = "tasks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="todo")
+    priority: Mapped[str] = mapped_column(String(20), default="medium")
+    due_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class PendingAction(Base):
- __tablename__="pending_actions";id:Mapped[str]=mapped_column(String(36),primary_key=True);owner_id:Mapped[int]=mapped_column(ForeignKey("users.id",ondelete="CASCADE"),index=True);tool:Mapped[str]=mapped_column(String(60));args_json:Mapped[str]=mapped_column(Text);status:Mapped[str]=mapped_column(String(20),default="pending");result_json:Mapped[str]=mapped_column(Text,default="");expires_at:Mapped[dt.datetime]=mapped_column(DateTime);confirmed_at:Mapped[dt.datetime|None]=mapped_column(DateTime,nullable=True)
+    __tablename__ = "pending_actions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    tool: Mapped[str] = mapped_column(String(60))
+    args_json: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    result_json: Mapped[str] = mapped_column(Text, default="")
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime)
+    confirmed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 ````
 
 ### 3.11 `app/schemas.py`
 
 ````python
 import datetime as dt
-from pydantic import BaseModel,ConfigDict,Field
-class RegisterIn(BaseModel):email:str;name:str;password:str=Field(min_length=8,max_length=72)
-class LoginIn(BaseModel):email:str;password:str
-class UserOut(BaseModel):model_config=ConfigDict(from_attributes=True);id:int;email:str;name:str;created_at:dt.datetime
-class AgentRequest(BaseModel):question:str=Field(min_length=2,max_length=20000);max_steps:int|None=Field(None,ge=1,le=10)
-class PendingOut(BaseModel):id:str;tool:str;args:dict;expires_at:dt.datetime
-class AgentResponse(BaseModel):ok:bool;answer:str;steps:list[dict];tool_calls:int;total_ms:int;stopped_by:str;pending_writes:list[PendingOut]=[]
-class ConfirmIn(BaseModel):action_id:str
-class ConfirmOut(BaseModel):ok:bool;tool:str;result:dict
-ConfirmWriteIn=ConfirmIn;ConfirmWriteOut=ConfirmOut;PendingWriteOut=PendingOut
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class RegisterIn(BaseModel):
+    email: str
+    name: str
+    password: str = Field(min_length=8, max_length=72)
+
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    email: str
+    name: str
+    created_at: dt.datetime
+
+
+class AgentRequest(BaseModel):
+    question: str = Field(min_length=2, max_length=20000)
+    max_steps: int | None = Field(None, ge=1, le=10)
+
+
+class PendingOut(BaseModel):
+    id: str
+    tool: str
+    args: dict
+    expires_at: dt.datetime
+
+
+class AgentResponse(BaseModel):
+    ok: bool
+    answer: str
+    steps: list[dict]
+    tool_calls: int
+    total_ms: int
+    stopped_by: str
+    pending_writes: list[PendingOut] = []
+
+
+class ConfirmIn(BaseModel):
+    action_id: str
+
+
+class ConfirmOut(BaseModel):
+    ok: bool
+    tool: str
+    result: dict
+
+
+ConfirmWriteIn = ConfirmIn
+ConfirmWriteOut = ConfirmOut
+PendingWriteOut = PendingOut
 ````
 
 ### 3.12 `app/auth.py`
 
 ````python
 """bcrypt 密码、JWT、Cookie/Bearer 双通道认证与资源归属校验。"""
+
 from __future__ import annotations
 
 import datetime as dt
@@ -309,9 +397,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(
-        password.encode("utf-8"), bcrypt.gensalt(rounds=10)
-    ).decode("ascii")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=10)).decode("ascii")
 
 
 def verify_password(password: str, hashed: str) -> bool:
@@ -342,9 +428,7 @@ def decode_token(token: str, settings: Settings) -> dict:
 
 
 def current_user(
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
-    ] = None,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)] = None,
     access_token: Annotated[str | None, Cookie()] = None,
     db: Session = Depends(get_session),
 ) -> User:
@@ -388,19 +472,38 @@ import datetime as dt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .auth import hash_password
-from .models import Project,Task,User
-def seed(db:Session):
- u=db.execute(select(User).where(User.email=="demo@tasks.dev")).scalar_one_or_none()
- if not u:u=User(email="demo@tasks.dev",name="演示用户",password_hash=hash_password("demo1234"));db.add(u);db.flush()
- p=db.execute(select(Project).where(Project.owner_id==u.id)).scalar_one_or_none()
- if not p:p=Project(owner_id=u.id,name="AI 学习",color="#4f7");db.add(p);db.flush();db.add(Task(owner_id=u.id,project_id=p.id,title="完成 Agent 练习",priority="high",due_date=dt.date.today()+dt.timedelta(days=1)))
- db.commit();return{"tasks":1}
+from .models import Project, Task, User
+
+
+def seed(db: Session):
+    u = db.execute(select(User).where(User.email == "demo@tasks.dev")).scalar_one_or_none()
+    if not u:
+        u = User(email="demo@tasks.dev", name="演示用户", password_hash=hash_password("demo1234"))
+        db.add(u)
+        db.flush()
+    p = db.execute(select(Project).where(Project.owner_id == u.id)).scalar_one_or_none()
+    if not p:
+        p = Project(owner_id=u.id, name="AI 学习", color="#4f7")
+        db.add(p)
+        db.flush()
+        db.add(
+            Task(
+                owner_id=u.id,
+                project_id=p.id,
+                title="完成 Agent 练习",
+                priority="high",
+                due_date=dt.date.today() + dt.timedelta(days=1),
+            )
+        )
+    db.commit()
+    return {"tasks": 1}
 ````
 
 ### 3.14 `app/llm.py`
 
 ````python
 """OpenAI 兼容模型调用与 Function Calling 工具定义。"""
+
 from __future__ import annotations
 
 import time
@@ -444,13 +547,9 @@ class LLM:
                 continue
             if first_chunk:
                 first_chunk = False
-                yield "ttft", {
-                    "ms": int((time.perf_counter() - started) * 1000)
-                }
+                yield "ttft", {"ms": int((time.perf_counter() - started) * 1000)}
             yield "delta", {"text": delta}
-        yield "done", {
-            "total_ms": int((time.perf_counter() - started) * 1000)
-        }
+        yield "done", {"total_ms": int((time.perf_counter() - started) * 1000)}
 
     async def with_tools(
         self,
@@ -498,78 +597,241 @@ def tool_spec(
 
 ````python
 import datetime as dt
-from sqlalchemy import func,select
+from sqlalchemy import func, select
 from .llm import tool_spec
-from .models import Project,Task
-SPECS=[tool_spec("list_tasks","查询任务。",{"status":{"type":"string"},"project_id":{"type":"integer"}},[]),tool_spec("get_task","获取任务。",{"task_id":{"type":"integer"}},["task_id"]),tool_spec("count_tasks","统计任务。",{"status":{"type":"string"}},[]),tool_spec("get_task_stats","统计完成率和逾期。",{},[]),tool_spec("create_task","创建任务。",{"project_id":{"type":"integer"},"title":{"type":"string"},"priority":{"type":"string"},"due_date":{"type":"string"}} ,["title"]),tool_spec("update_task","更新任务。",{"task_id":{"type":"integer"},"status":{"type":"string"},"priority":{"type":"string"},"due_date":{"type":"string"}},["task_id"])]
-WRITE={"create_task","update_task"};WRITE_TOOLS=WRITE;READ_TOOLS={"list_tasks","get_task","count_tasks","get_task_stats"}
-def validate(n,a):
- if n=="create_task":
-  if not str(a.get("title") or "").strip():return "标题不能为空"
-  if a.get("priority","medium") not in{"low","medium","high"}:return "优先级非法"
- if n=="update_task" and "status" in a and a["status"] not in{"todo","in_progress","blocked","done"}:return "状态非法"
-def execute(n,a,db,uid,commit=True):
- if n=="list_tasks":
-  q=select(Task).where(Task.owner_id==uid)
-  if a.get("status"):q=q.where(Task.status==a["status"])
-  if a.get("project_id"):q=q.where(Task.project_id==int(a["project_id"]))
-  return{"items":[{"id":x.id,"title":x.title,"status":x.status,"priority":x.priority,"due_date":x.due_date.isoformat()if x.due_date else None}for x in db.execute(q).scalars()]}
- if n=="get_task":
-  x=db.execute(select(Task).where(Task.id==int(a["task_id"]),Task.owner_id==uid)).scalar_one_or_none();return{"error":"任务不存在"}if not x else{"id":x.id,"title":x.title,"status":x.status}
- if n=="count_tasks":
-  q=select(func.count(Task.id)).where(Task.owner_id==uid)
-  if a.get("status"):q=q.where(Task.status==a["status"])
-  return{"count":db.execute(q).scalar_one()}
- if n=="get_task_stats":
-  rows=db.execute(select(Task).where(Task.owner_id==uid)).scalars().all();return{"total":len(rows),"done":sum(x.status=="done"for x in rows),"overdue":sum(bool(x.due_date and x.due_date<dt.date.today() and x.status!="done")for x in rows)}
- if n in WRITE:
-  e=validate(n,a)
-  if e:return{"error":e}
- if n=="create_task":
-  due=dt.date.fromisoformat(a["due_date"])if a.get("due_date")else None;x=Task(owner_id=uid,project_id=int(a["project_id"])if a.get("project_id")else None,title=a["title"],priority=a.get("priority","medium"),due_date=due);db.add(x);db.flush();return{"ok":True,"task_id":x.id}
- if n=="update_task":
-  x=db.execute(select(Task).where(Task.id==int(a["task_id"]),Task.owner_id==uid)).scalar_one_or_none()
-  if not x:return{"error":"任务不存在"}
-  if"status"in a:x.status=a["status"]
-  if"priority"in a:x.priority=a["priority"]
-  if"due_date"in a:x.due_date=dt.date.fromisoformat(a["due_date"])if a["due_date"]else None
-  db.flush();return{"ok":True,"task_id":x.id}
- return{"error":"未知工具"}
+from .models import Project, Task
+
+SPECS = [
+    tool_spec(
+        "list_tasks",
+        "查询任务。",
+        {"status": {"type": "string"}, "project_id": {"type": "integer"}},
+        [],
+    ),
+    tool_spec("get_task", "获取任务。", {"task_id": {"type": "integer"}}, ["task_id"]),
+    tool_spec("count_tasks", "统计任务。", {"status": {"type": "string"}}, []),
+    tool_spec("get_task_stats", "统计完成率和逾期。", {}, []),
+    tool_spec(
+        "create_task",
+        "创建任务。",
+        {
+            "project_id": {"type": "integer"},
+            "title": {"type": "string"},
+            "priority": {"type": "string"},
+            "due_date": {"type": "string"},
+        },
+        ["title"],
+    ),
+    tool_spec(
+        "update_task",
+        "更新任务。",
+        {
+            "task_id": {"type": "integer"},
+            "status": {"type": "string"},
+            "priority": {"type": "string"},
+            "due_date": {"type": "string"},
+        },
+        ["task_id"],
+    ),
+]
+WRITE = {"create_task", "update_task"}
+WRITE_TOOLS = WRITE
+READ_TOOLS = {"list_tasks", "get_task", "count_tasks", "get_task_stats"}
+
+
+def validate(n, a):
+    if n == "create_task":
+        if not str(a.get("title") or "").strip():
+            return "标题不能为空"
+        if a.get("priority", "medium") not in {"low", "medium", "high"}:
+            return "优先级非法"
+    if (
+        n == "update_task"
+        and "status" in a
+        and a["status"] not in {"todo", "in_progress", "blocked", "done"}
+    ):
+        return "状态非法"
+
+
+def execute(n, a, db, uid, commit=True):
+    if n == "list_tasks":
+        q = select(Task).where(Task.owner_id == uid)
+        if a.get("status"):
+            q = q.where(Task.status == a["status"])
+        if a.get("project_id"):
+            q = q.where(Task.project_id == int(a["project_id"]))
+        return {
+            "items": [
+                {
+                    "id": x.id,
+                    "title": x.title,
+                    "status": x.status,
+                    "priority": x.priority,
+                    "due_date": x.due_date.isoformat() if x.due_date else None,
+                }
+                for x in db.execute(q).scalars()
+            ]
+        }
+    if n == "get_task":
+        x = db.execute(
+            select(Task).where(Task.id == int(a["task_id"]), Task.owner_id == uid)
+        ).scalar_one_or_none()
+        return (
+            {"error": "任务不存在"} if not x else {"id": x.id, "title": x.title, "status": x.status}
+        )
+    if n == "count_tasks":
+        q = select(func.count(Task.id)).where(Task.owner_id == uid)
+        if a.get("status"):
+            q = q.where(Task.status == a["status"])
+        return {"count": db.execute(q).scalar_one()}
+    if n == "get_task_stats":
+        rows = db.execute(select(Task).where(Task.owner_id == uid)).scalars().all()
+        return {
+            "total": len(rows),
+            "done": sum(x.status == "done" for x in rows),
+            "overdue": sum(
+                bool(x.due_date and x.due_date < dt.date.today() and x.status != "done")
+                for x in rows
+            ),
+        }
+    if n in WRITE:
+        e = validate(n, a)
+        if e:
+            return {"error": e}
+    if n == "create_task":
+        due = dt.date.fromisoformat(a["due_date"]) if a.get("due_date") else None
+        x = Task(
+            owner_id=uid,
+            project_id=int(a["project_id"]) if a.get("project_id") else None,
+            title=a["title"],
+            priority=a.get("priority", "medium"),
+            due_date=due,
+        )
+        db.add(x)
+        db.flush()
+        return {"ok": True, "task_id": x.id}
+    if n == "update_task":
+        x = db.execute(
+            select(Task).where(Task.id == int(a["task_id"]), Task.owner_id == uid)
+        ).scalar_one_or_none()
+        if not x:
+            return {"error": "任务不存在"}
+        if "status" in a:
+            x.status = a["status"]
+        if "priority" in a:
+            x.priority = a["priority"]
+        if "due_date" in a:
+            x.due_date = dt.date.fromisoformat(a["due_date"]) if a["due_date"] else None
+        db.flush()
+        return {"ok": True, "task_id": x.id}
+    return {"error": "未知工具"}
 ````
 
 ### 3.16 `app/agent.py`
 
 ````python
 from __future__ import annotations
-import datetime as dt,json,time,uuid
-from dataclasses import dataclass,field
+import datetime as dt, json, time, uuid
+from dataclasses import dataclass, field
 from .models import PendingAction
-from .tools import SPECS,WRITE,execute,validate
-SYSTEM="你是个人任务管理 Agent。数量、完成率和逾期必须查询真实数据库；更新任务前必须确定唯一任务。创建和更新任务必须等待用户确认。"
+from .tools import SPECS, WRITE, execute, validate
+
+SYSTEM = "你是个人任务管理 Agent。数量、完成率和逾期必须查询真实数据库；更新任务前必须确定唯一任务。创建和更新任务必须等待用户确认。"
+
+
 @dataclass
-class Step:kind:str;content:str;tool:str|None=None;args:dict|None=None;ms:int=0
+class Step:
+    kind: str
+    content: str
+    tool: str | None = None
+    args: dict | None = None
+    ms: int = 0
+
+
 @dataclass
 class Result:
- answer:str;steps:list[Step]=field(default_factory=list);tool_calls:int=0;total_ms:int=0;stopped_by:str="answer";pending:list[PendingAction]=field(default_factory=list)
- @property
- def pending_writes(self):return self.pending
-async def run_agent(llm,db,uid,q,s,max_steps=None):
- msgs=[{"role":"system","content":SYSTEM},{"role":"user","content":q}];steps=[];pending=[];start=time.perf_counter();calls=0;limit=max(1,min(max_steps or s.agent_max_steps,s.agent_max_steps))
- for _ in range(limit):
-  msg,_=await llm.with_tools(msgs,SPECS,temperature=.2);tcs=getattr(msg,"tool_calls",None) or []
-  if not tcs:return Result(msg.content or "",steps+[Step("answer",msg.content or "")],calls,int((time.perf_counter()-start)*1000),"answer",pending)
-  msgs.append({"role":"assistant","content":msg.content,"tool_calls":[{"id":c.id,"type":"function","function":{"name":c.function.name,"arguments":c.function.arguments}} for c in tcs]})
-  for c in tcs:
-   calls+=1;n=c.function.name
-   try:a=json.loads(c.function.arguments or "{}")
-   except:a={}
-   if n in WRITE and s.agent_confirm_write:
-    e=validate(n,a);r={"error":e} if e else None
-    if not e:
-     x=PendingAction(id=uuid.uuid4().hex,owner_id=uid,tool=n,args_json=json.dumps(a,ensure_ascii=False),expires_at=dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)+dt.timedelta(minutes=s.agent_confirm_ttl_minutes));db.add(x);db.commit();pending.append(x);r={"action_id":x.id,"status":"pending_confirmation"}
-   else:r=execute(n,a,db,uid)
-   steps.append(Step("tool_result",json.dumps(r,ensure_ascii=False),n));msgs.append({"role":"tool","tool_call_id":c.id,"content":json.dumps(r,ensure_ascii=False)})
- return Result("达到最大步数",steps,calls,int((time.perf_counter()-start)*1000),"max_steps",pending)
+    answer: str
+    steps: list[Step] = field(default_factory=list)
+    tool_calls: int = 0
+    total_ms: int = 0
+    stopped_by: str = "answer"
+    pending: list[PendingAction] = field(default_factory=list)
+
+    @property
+    def pending_writes(self):
+        return self.pending
+
+
+async def run_agent(llm, db, uid, q, s, max_steps=None):
+    msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": q}]
+    steps = []
+    pending = []
+    start = time.perf_counter()
+    calls = 0
+    limit = max(1, min(max_steps or s.agent_max_steps, s.agent_max_steps))
+    for _ in range(limit):
+        msg, _ = await llm.with_tools(msgs, SPECS, temperature=0.2)
+        tcs = getattr(msg, "tool_calls", None) or []
+        if not tcs:
+            return Result(
+                msg.content or "",
+                steps + [Step("answer", msg.content or "")],
+                calls,
+                int((time.perf_counter() - start) * 1000),
+                "answer",
+                pending,
+            )
+        msgs.append(
+            {
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": [
+                    {
+                        "id": c.id,
+                        "type": "function",
+                        "function": {"name": c.function.name, "arguments": c.function.arguments},
+                    }
+                    for c in tcs
+                ],
+            }
+        )
+        for c in tcs:
+            calls += 1
+            n = c.function.name
+            try:
+                a = json.loads(c.function.arguments or "{}")
+            except:
+                a = {}
+            if n in WRITE and s.agent_confirm_write:
+                e = validate(n, a)
+                r = {"error": e} if e else None
+                if not e:
+                    x = PendingAction(
+                        id=uuid.uuid4().hex,
+                        owner_id=uid,
+                        tool=n,
+                        args_json=json.dumps(a, ensure_ascii=False),
+                        expires_at=dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+                        + dt.timedelta(minutes=s.agent_confirm_ttl_minutes),
+                    )
+                    db.add(x)
+                    db.commit()
+                    pending.append(x)
+                    r = {"action_id": x.id, "status": "pending_confirmation"}
+            else:
+                r = execute(n, a, db, uid)
+            steps.append(Step("tool_result", json.dumps(r, ensure_ascii=False), n))
+            msgs.append(
+                {"role": "tool", "tool_call_id": c.id, "content": json.dumps(r, ensure_ascii=False)}
+            )
+    return Result(
+        "达到最大步数",
+        steps,
+        calls,
+        int((time.perf_counter() - start) * 1000),
+        "max_steps",
+        pending,
+    )
 ````
 
 ### 3.17 `app/main.py`
@@ -584,21 +846,40 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect
 from .config import get_settings
-from .db import Base,db_note,get_engine,get_sessionmaker,init_db
-from .routers import agent,auth,tasks
+from .db import Base, db_note, get_engine, get_sessionmaker, init_db
+from .routers import agent, auth, tasks
 from .seed import seed
-BASE_DIR=Path(__file__).resolve().parent
+
+BASE_DIR = Path(__file__).resolve().parent
+
+
 @asynccontextmanager
-async def lifespan(_app:FastAPI):
- s=get_settings();e=init_db(s);Base.metadata.create_all(bind=e)
- with get_sessionmaker()()as db:logging.info("演示数据：%s",seed(db))
- yield
-app=FastAPI(title="个人任务与项目看板",version="1.0.0",lifespan=lifespan);app.include_router(auth.router);app.include_router(agent.router);app.include_router(tasks.router);app.mount("/static",StaticFiles(directory=BASE_DIR/"static"),name="static")
-@app.get("/",include_in_schema=False)
-async def index():return FileResponse(BASE_DIR/"static"/"index.html")
+async def lifespan(_app: FastAPI):
+    s = get_settings()
+    e = init_db(s)
+    Base.metadata.create_all(bind=e)
+    with get_sessionmaker()() as db:
+        logging.info("演示数据：%s", seed(db))
+    yield
+
+
+app = FastAPI(title="个人任务与项目看板", version="1.0.0", lifespan=lifespan)
+app.include_router(auth.router)
+app.include_router(agent.router)
+app.include_router(tasks.router)
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
+
+@app.get("/", include_in_schema=False)
+async def index():
+    return FileResponse(BASE_DIR / "static" / "index.html")
+
+
 @app.get("/api/health")
 def health():
- s=get_settings();e=get_engine();return{"ok":True,"tables":sorted(inspect(e).get_table_names()),"db_note":db_note()}
+    s = get_settings()
+    e = get_engine()
+    return {"ok": True, "tables": sorted(inspect(e).get_table_names()), "db_note": db_note()}
 ````
 
 ### 3.18 `app/routers/__init__.py`
@@ -611,6 +892,7 @@ def health():
 
 ````python
 """注册、登录、退出和当前用户。"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -688,52 +970,133 @@ from ..llm import LLM
 from ..models import PendingAction, User
 from ..schemas import AgentRequest, AgentResponse, ConfirmWriteIn, ConfirmWriteOut, PendingWriteOut
 from ..tools import SPECS, WRITE_TOOLS, execute
-router=APIRouter(prefix="/api/agent",tags=["agent"]); log=logging.getLogger("document.api")
-def _llm(): return LLM(get_settings())
-def _pending(row): return PendingWriteOut(id=row.id,tool=row.tool,args=json.loads(row.args_json),expires_at=row.expires_at)
+
+router = APIRouter(prefix="/api/agent", tags=["agent"])
+log = logging.getLogger("document.api")
+
+
+def _llm():
+    return LLM(get_settings())
+
+
+def _pending(row):
+    return PendingWriteOut(
+        id=row.id, tool=row.tool, args=json.loads(row.args_json), expires_at=row.expires_at
+    )
+
+
 @router.get("/tools")
-def tools(): return {"ok":True,"tools":[{"name":x["function"]["name"],"description":x["function"]["description"],"required":x["function"]["parameters"].get("required",[])} for x in SPECS]}
-@router.post("/run",response_model=AgentResponse)
-async def run(body:AgentRequest,user:User=Depends(current_user),db:Session=Depends(get_session)):
-    s=get_settings()
-    try:r=await run_agent(_llm(),db,user.id,body.question,s,max_steps=min(body.max_steps or s.agent_max_steps,s.agent_max_steps))
-    except Exception as exc: log.exception("agent failed"); raise HTTPException(500,str(exc)) from exc
-    return AgentResponse(ok=True,answer=r.answer,steps=[{"kind":x.kind,"content":x.content,"tool":x.tool,"args":x.args,"ms":x.ms} for x in r.steps],tool_calls=r.tool_calls,total_ms=r.total_ms,stopped_by=r.stopped_by,pending_writes=[_pending(x) for x in r.pending_writes])
-@router.post("/confirm",response_model=ConfirmWriteOut)
-def confirm(body:ConfirmWriteIn,user:User=Depends(current_user),db:Session=Depends(get_session)):
-    action=db.execute(select(PendingAction).where(PendingAction.id==body.action_id,PendingAction.owner_id==user.id)).scalar_one_or_none()
-    if not action: raise HTTPException(404,"待确认操作不存在")
-    if action.tool not in WRITE_TOOLS: raise HTTPException(400,"该操作不在写工具白名单")
-    if action.status=="executed": return ConfirmWriteOut(ok=True,tool=action.tool,result=json.loads(action.result_json or "{}"))
-    if action.status!="pending": raise HTTPException(409,f"当前状态 {action.status} 不能执行")
-    now=dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
-    if action.expires_at<now: action.status="expired"; db.commit(); raise HTTPException(409,"确认已过期")
-    action.status="executing"; db.commit()
+def tools():
+    return {
+        "ok": True,
+        "tools": [
+            {
+                "name": x["function"]["name"],
+                "description": x["function"]["description"],
+                "required": x["function"]["parameters"].get("required", []),
+            }
+            for x in SPECS
+        ],
+    }
+
+
+@router.post("/run", response_model=AgentResponse)
+async def run(
+    body: AgentRequest, user: User = Depends(current_user), db: Session = Depends(get_session)
+):
+    s = get_settings()
     try:
-        result=execute(action.tool,json.loads(action.args_json),db,user.id,commit=False)
-        if result.get("error"): raise RuntimeError(result["error"])
+        r = await run_agent(
+            _llm(),
+            db,
+            user.id,
+            body.question,
+            s,
+            max_steps=min(body.max_steps or s.agent_max_steps, s.agent_max_steps),
+        )
     except Exception as exc:
-        db.rollback(); failed=db.get(PendingAction,action.id)
-        if failed and failed.status=="executing": failed.status="pending"; db.commit()
-        raise HTTPException(500,f"写操作执行失败：{exc}") from exc
-    done=db.get(PendingAction,action.id); done.status="executed"; done.result_json=json.dumps(result,ensure_ascii=False); done.confirmed_at=now; db.commit()
-    return ConfirmWriteOut(ok=True,tool=done.tool,result=result)
+        log.exception("agent failed")
+        raise HTTPException(500, str(exc)) from exc
+    return AgentResponse(
+        ok=True,
+        answer=r.answer,
+        steps=[
+            {"kind": x.kind, "content": x.content, "tool": x.tool, "args": x.args, "ms": x.ms}
+            for x in r.steps
+        ],
+        tool_calls=r.tool_calls,
+        total_ms=r.total_ms,
+        stopped_by=r.stopped_by,
+        pending_writes=[_pending(x) for x in r.pending_writes],
+    )
+
+
+@router.post("/confirm", response_model=ConfirmWriteOut)
+def confirm(
+    body: ConfirmWriteIn, user: User = Depends(current_user), db: Session = Depends(get_session)
+):
+    action = db.execute(
+        select(PendingAction).where(
+            PendingAction.id == body.action_id, PendingAction.owner_id == user.id
+        )
+    ).scalar_one_or_none()
+    if not action:
+        raise HTTPException(404, "待确认操作不存在")
+    if action.tool not in WRITE_TOOLS:
+        raise HTTPException(400, "该操作不在写工具白名单")
+    if action.status == "executed":
+        return ConfirmWriteOut(
+            ok=True, tool=action.tool, result=json.loads(action.result_json or "{}")
+        )
+    if action.status != "pending":
+        raise HTTPException(409, f"当前状态 {action.status} 不能执行")
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    if action.expires_at < now:
+        action.status = "expired"
+        db.commit()
+        raise HTTPException(409, "确认已过期")
+    action.status = "executing"
+    db.commit()
+    try:
+        result = execute(action.tool, json.loads(action.args_json), db, user.id, commit=False)
+        if result.get("error"):
+            raise RuntimeError(result["error"])
+    except Exception as exc:
+        db.rollback()
+        failed = db.get(PendingAction, action.id)
+        if failed and failed.status == "executing":
+            failed.status = "pending"
+            db.commit()
+        raise HTTPException(500, f"写操作执行失败：{exc}") from exc
+    done = db.get(PendingAction, action.id)
+    done.status = "executed"
+    done.result_json = json.dumps(result, ensure_ascii=False)
+    done.confirmed_at = now
+    db.commit()
+    return ConfirmWriteOut(ok=True, tool=done.tool, result=result)
 ````
 
 ### 3.21 `app/routers/tasks.py`
 
 ````python
-from fastapi import APIRouter,Depends
+from fastapi import APIRouter, Depends
 from ..auth import current_user
 from ..db import get_session
 from ..models import User
 from ..tools import execute
 from sqlalchemy.orm import Session
-router=APIRouter(prefix="/api/tasks",tags=["tasks"])
+
+router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+
+
 @router.get("")
-def list_all(user:User=Depends(current_user),db:Session=Depends(get_session)):return execute("list_tasks",{},db,user.id)
+def list_all(user: User = Depends(current_user), db: Session = Depends(get_session)):
+    return execute("list_tasks", {}, db, user.id)
+
+
 @router.get("/stats")
-def stats(user:User=Depends(current_user),db:Session=Depends(get_session)):return execute("get_task_stats",{},db,user.id)
+def stats(user: User = Depends(current_user), db: Session = Depends(get_session)):
+    return execute("get_task_stats", {}, db, user.id)
 ````
 
 ### 3.22 `app/static/request.js`
@@ -847,34 +1210,86 @@ export function escapeHtml(value) {
 ### 3.25 `tests/test_app.py`
 
 ````python
-import json,os,tempfile,unittest
+import json, os, tempfile, unittest
 from types import SimpleNamespace
-td=tempfile.mkdtemp(prefix="task-tests-");os.environ.update(DATABASE_URL=f"sqlite:///{td}/t.db",SILICONFLOW_API_KEY="test",JWT_SECRET="test")
+
+td = tempfile.mkdtemp(prefix="task-tests-")
+os.environ.update(
+    DATABASE_URL=f"sqlite:///{td}/t.db", SILICONFLOW_API_KEY="test", JWT_SECRET="test"
+)
 from fastapi.testclient import TestClient
 import app.routers.agent as ar
 from app.main import app
+
+
 class Fake:
- def __init__(self):self.n=0
- async def with_tools(self,messages,tools,temperature=.2):
-  self.n+=1
-  if self.n==1:
-   c=SimpleNamespace(id="c",function=SimpleNamespace(name="create_task",arguments=json.dumps({"project_id":1,"title":"复习 Agent","priority":"high"},ensure_ascii=False)));return SimpleNamespace(content=None,tool_calls=[c]),{}
-  return SimpleNamespace(content="任务待确认",tool_calls=None),{}
+    def __init__(self):
+        self.n = 0
+
+    async def with_tools(self, messages, tools, temperature=0.2):
+        self.n += 1
+        if self.n == 1:
+            c = SimpleNamespace(
+                id="c",
+                function=SimpleNamespace(
+                    name="create_task",
+                    arguments=json.dumps(
+                        {"project_id": 1, "title": "复习 Agent", "priority": "high"},
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+            return SimpleNamespace(content=None, tool_calls=[c]), {}
+        return SimpleNamespace(content="任务待确认", tool_calls=None), {}
+
+
 class Tests(unittest.TestCase):
- @classmethod
- def setUpClass(cls):cls.ctx=TestClient(app);cls.c=cls.ctx.__enter__()
- @classmethod
- def tearDownClass(cls):cls.ctx.__exit__(None,None,None)
- def login(self):r=self.c.post("/api/auth/login",json={"email":"demo@tasks.dev","password":"demo1234"});self.assertEqual(r.status_code,200)
- def test_01_auth_stats(self):self.assertEqual(self.c.get("/api/tasks/stats").status_code,401);self.login();self.assertEqual(self.c.get("/api/tasks/stats").json()["total"],1)
- def test_02_task_confirmation(self):
-  self.login();f=Fake();old=ar._llm;ar._llm=lambda:f
-  try:r=self.c.post("/api/agent/run",json={"question":"创建复习任务"})
-  finally:ar._llm=old
-  p=r.json()["pending_writes"];self.assertEqual(len(p),1);a=self.c.post("/api/agent/confirm",json={"action_id":p[0]["id"]});b=self.c.post("/api/agent/confirm",json={"action_id":p[0]["id"]});self.assertEqual(a.json(),b.json())
- def test_03_cross_user(self):
-  self.login();s=os.urandom(3).hex();self.c.post("/api/auth/register",json={"email":f"x{s}@x.com","name":"X","password":"password1"});self.c.post("/api/auth/login",json={"email":f"x{s}@x.com","password":"password1"});self.assertEqual(self.c.get("/api/tasks/stats").json()["total"],0)
-if __name__=="__main__":unittest.main()
+    @classmethod
+    def setUpClass(cls):
+        cls.ctx = TestClient(app)
+        cls.c = cls.ctx.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.__exit__(None, None, None)
+
+    def login(self):
+        r = self.c.post("/api/auth/login", json={"email": "demo@tasks.dev", "password": "demo1234"})
+        self.assertEqual(r.status_code, 200)
+
+    def test_01_auth_stats(self):
+        self.assertEqual(self.c.get("/api/tasks/stats").status_code, 401)
+        self.login()
+        self.assertEqual(self.c.get("/api/tasks/stats").json()["total"], 1)
+
+    def test_02_task_confirmation(self):
+        self.login()
+        f = Fake()
+        old = ar._llm
+        ar._llm = lambda: f
+        try:
+            r = self.c.post("/api/agent/run", json={"question": "创建复习任务"})
+        finally:
+            ar._llm = old
+        p = r.json()["pending_writes"]
+        self.assertEqual(len(p), 1)
+        a = self.c.post("/api/agent/confirm", json={"action_id": p[0]["id"]})
+        b = self.c.post("/api/agent/confirm", json={"action_id": p[0]["id"]})
+        self.assertEqual(a.json(), b.json())
+
+    def test_03_cross_user(self):
+        self.login()
+        s = os.urandom(3).hex()
+        self.c.post(
+            "/api/auth/register",
+            json={"email": f"x{s}@x.com", "name": "X", "password": "password1"},
+        )
+        self.c.post("/api/auth/login", json={"email": f"x{s}@x.com", "password": "password1"})
+        self.assertEqual(self.c.get("/api/tasks/stats").json()["total"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
 ````
 
 ## 逐文件文档

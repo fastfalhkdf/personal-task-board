@@ -67,8 +67,5 @@ def assert_task_writable(db: Session, task: Task | None, user: User) -> None:
 def assert_task_deletable(db: Session, task: Task | None, user: User) -> None:
     """删除最严：私人任务仅创建者；项目任务仅 owner 角色（§4.3 可删列）。"""
     assert_task_visible(db, task, user)
-    if (
-        task.project_id is not None
-        and project_role(db, task.project_id, user.id) != "owner"
-    ):
+    if task.project_id is not None and project_role(db, task.project_id, user.id) != "owner":
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
