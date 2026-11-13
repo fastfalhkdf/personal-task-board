@@ -175,7 +175,6 @@ def delete_project(
         db.delete(task)
     db.delete(project)
     db.commit()
-    return None
 
 
 @router.get("/projects/{project_id}/stats")

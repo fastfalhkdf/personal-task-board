@@ -150,4 +150,3 @@ def remove_member(
         raise HTTPException(status_code=400, detail="不能移除项目 owner")
     db.delete(row)
     db.commit()
-    return None

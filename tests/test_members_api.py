@@ -66,7 +66,7 @@ class MemberApiTests(unittest.TestCase):
 
     # ---------- 项目 ----------
     def test_01_create_project_auto_owner(self):
-        tok, uid, _ = self._login("owner")
+        tok, _uid, _ = self._login("owner")
         project = self._project(tok, "自动 owner 项目")
         self.assertEqual(project["role"], "owner")
         self.assertEqual(project["member_count"], 1)
@@ -119,7 +119,7 @@ class MemberApiTests(unittest.TestCase):
 
     def test_06_owner_manages_members(self):
         tok, _, _ = self._login("manage-o")
-        tok_m, uid_m, email_m = self._login("manage-m")
+        _tok_m, uid_m, email_m = self._login("manage-m")
         project = self._project(tok, "成员管理项目")
         self.assertEqual(self._invite(tok, project["id"], email_m).status_code, 201)
 
