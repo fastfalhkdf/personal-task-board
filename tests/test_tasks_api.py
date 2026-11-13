@@ -45,9 +45,7 @@ class TaskApiTests(unittest.TestCase):
             json={"email": email, "name": tag, "password": "password1"},
         )
         self.assertEqual(r.status_code, 201, r.text)
-        r = self.c.post(
-            "/api/auth/login", json={"email": email, "password": "password1"}
-        )
+        r = self.c.post("/api/auth/login", json={"email": email, "password": "password1"})
         self.assertEqual(r.status_code, 200, r.text)
         return r.json()["token"], r.json()["user"]["id"]
 
@@ -162,9 +160,7 @@ class TaskApiTests(unittest.TestCase):
             404,
         )
         self.assertEqual(
-            self.c.delete(
-                f"/api/tasks/{created['id']}", headers=self._h(tok_b)
-            ).status_code,
+            self.c.delete(f"/api/tasks/{created['id']}", headers=self._h(tok_b)).status_code,
             404,
         )
 
@@ -175,9 +171,7 @@ class TaskApiTests(unittest.TestCase):
         tok_x, _ = self._login("proj-x")
         pid = self._make_project(tok_o, uid_o, name="可见性项目")
         self._add_member(pid, uid_m)
-        created = self._create(
-            tok_o, title=f"项目任务-{os.urandom(2).hex()}", project_id=pid
-        )
+        created = self._create(tok_o, title=f"项目任务-{os.urandom(2).hex()}", project_id=pid)
 
         # 成员能看到
         r = self.c.get(f"/api/tasks?project_id={pid}", headers=self._h(tok_m))
@@ -208,9 +202,7 @@ class TaskApiTests(unittest.TestCase):
         _tok_x, uid_x = self._login("asg-x")
         pid = self._make_project(tok_o, uid_o, name="指派项目")
         self._add_member(pid, uid_m)
-        created = self._create(
-            tok_o, title=f"指派-{os.urandom(2).hex()}", project_id=pid
-        )
+        created = self._create(tok_o, title=f"指派-{os.urandom(2).hex()}", project_id=pid)
 
         r = self.c.patch(
             f"/api/tasks/{created['id']}",
@@ -230,9 +222,7 @@ class TaskApiTests(unittest.TestCase):
         """今日待办/逾期/完成率（缺口 5），全部相对日期。"""
         tok, _ = self._login("today-u")
         today = dt.date.today()
-        t1 = self._create(
-            tok, title=f"今到期-{os.urandom(2).hex()}", due_date=today.isoformat()
-        )
+        t1 = self._create(tok, title=f"今到期-{os.urandom(2).hex()}", due_date=today.isoformat())
         t2 = self._create(
             tok,
             title=f"已逾期-{os.urandom(2).hex()}",
@@ -246,9 +236,7 @@ class TaskApiTests(unittest.TestCase):
         self.assertLessEqual(r["done_rate"], 1.0)
 
         # 状态改 done：进完成计数、清出今日/逾期、写完成时间
-        resp = self.c.patch(
-            f"/api/tasks/{t1['id']}", json={"status": "done"}, headers=self._h(tok)
-        )
+        resp = self.c.patch(f"/api/tasks/{t1['id']}", json={"status": "done"}, headers=self._h(tok))
         self.assertEqual(resp.status_code, 200)
         self.assertIsNotNone(resp.json()["completed_at"])
         r = self.c.get("/api/tasks/today", headers=self._h(tok)).json()
@@ -271,9 +259,7 @@ class TaskApiTests(unittest.TestCase):
         tok_m, uid_m = self._login("del-m")
         pid = self._make_project(tok_o, uid_o, name="删除项目")
         self._add_member(pid, uid_m)
-        created = self._create(
-            tok_m, title=f"成员建-{os.urandom(2).hex()}", project_id=pid
-        )
+        created = self._create(tok_m, title=f"成员建-{os.urandom(2).hex()}", project_id=pid)
 
         r = self.c.delete(f"/api/tasks/{created['id']}", headers=self._h(tok_m))
         self.assertEqual(r.status_code, 404)  # member 不可删项目任务
