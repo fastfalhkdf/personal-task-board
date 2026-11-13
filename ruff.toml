@@ -1,0 +1,22 @@
+# 个人任务与项目看板 · 全组统一 ruff 配置
+# 建立：付佳宝，D1 上午，按群通知"建 requirements-dev.txt 时在仓库放 ruff.toml 统一 ignore"
+# 目的：规则、阈值、忽略项在五台机器上完全一致，DoD 的 `ruff check .` 零告警才是同一个标准。
+# 配套：requirements-dev.txt 锁死 ruff 版本 —— 版本不锁，默认规则集就会漂移，本文件白写。
+
+line-length = 100          # 《统一开发规范》§4.1：line-length = 100
+target-version = "py311"
+
+[lint]
+# 存量代码统一 ignore。多数命中点位于他人名下文件或规范 §5.2 标注"无人改动"的文件，
+# 按红线②不擅自改他人文件；对应文件负责人清理后，从本表逐条删除再复检。
+ignore = [
+  "B008",    # FastAPI `Depends(...)` 写在参数默认值里，框架惯例；群通知点名统一 ignore
+  "I001",    # import 未排序：命中 app/auth.py、app/routers/auth.py（§5.2"无人改动"，禁止改）
+  "UP017",   # datetime.timezone.utc → datetime.UTC：同样命中"无人改动"的 auth 系文件
+  "UP035",   # 应从 collections.abc 导入 AsyncIterator（app/llm.py，郑伟健名下）
+  "E722",    # 裸 except（app/agent.py，郑伟健名下，待其清理后移除本条）
+  "F841",    # 赋值后未使用（app/main.py）
+  "F401",    # 导入未使用（app/tools.py，郑伟健名下）
+  "LOG015",  # 在 root logger 上调用 info()（app/main.py）
+  "RUF100",  # 失效的 noqa 注释（app/db.py）
+]
