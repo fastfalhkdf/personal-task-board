@@ -266,6 +266,49 @@ def _apply_filters(q, args: dict):
     return q
 
 
+def precheck(db, name: str, args: dict, uid: int) -> str | None:
+    """写操作生成待确认之前的服务端兜底：目标资源必须属于当前用户。
+
+    模型可能瞎填 project_id / task_id，这里先拦一道，避免「确认了才发现越权」。
+    """
+    if name == "create_task":
+        project_id = args.get("project_id")
+        if not project_id:
+            return "创建任务必须指定所属项目（project_id）"
+        member = db.execute(
+            select(ProjectMember.id).where(
+                ProjectMember.project_id == int(project_id),
+                ProjectMember.user_id == uid,
+            )
+        ).first()
+        if not member:
+            return "项目不存在或你不是该项目成员"
+        assignee_id = args.get("assignee_id")
+        if assignee_id:
+            assignee = db.execute(
+                select(ProjectMember.id).where(
+                    ProjectMember.project_id == int(project_id),
+                    ProjectMember.user_id == int(assignee_id),
+                )
+            ).first()
+            if not assignee:
+                return "指派人不是该项目成员"
+        return None
+
+    if name == "update_task":
+        task_id = args.get("task_id")
+        if not task_id:
+            return "必须提供 task_id"
+        row = db.execute(
+            select(Task.id).where(Task.id == int(task_id), visible_task_filter(uid))
+        ).first()
+        if not row:
+            return "任务不存在或无权修改"
+        return None
+
+    return None
+
+
 def snapshot(db, name: str, args: dict, uid: int) -> dict:
     """写操作执行前的改前快照；update_task 才有，用于前端 diff。"""
     if name != "update_task":

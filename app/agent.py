@@ -1,4 +1,4 @@
-"""ReAct Agent 循环：决策 → 工具 → 观察 → 收敛（郑伟健 · 设计方案 §6.2）。
+﻿"""ReAct Agent 循环：决策 → 工具 → 观察 → 收敛（郑伟健 · 设计方案 §6.2）。
 
 相对原版的三处改动：
 1. 支持前端带上最近 N 轮对话（history），解决「再把它移到进行中」这类指代；
@@ -17,7 +17,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from .models import PendingAction
-from .tools import SPECS, WRITE_TOOLS, execute, snapshot, validate
+from .tools import SPECS, WRITE_TOOLS, execute, precheck, snapshot, validate
 
 #: 前端最多带 10 轮，服务端只认最近 10 轮（20 条消息），防止 prompt 被刷爆
 MAX_HISTORY_ROUNDS = 10
@@ -163,7 +163,7 @@ async def run_agent(
                               tool=name, args=args))
 
             if name in WRITE_TOOLS and confirm:
-                error = validate(name, args)
+                error = validate(name, args) or precheck(db, name, args, uid)
                 if error:
                     result = {"error": error}
                     steps.append(Step("tool_result", json.dumps(result, ensure_ascii=False),
@@ -236,3 +236,4 @@ async def run_agent(
         "max_steps",
         pending,
     )
+

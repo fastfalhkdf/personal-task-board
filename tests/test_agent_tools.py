@@ -221,9 +221,27 @@ class AgentToolTests(unittest.TestCase):
         self.assertEqual(payload["answer"], "收到")
         self.assertEqual(payload["stopped_by"], "answer")
 
+    # ---- 9. 越权项目在生成待确认前就被兜底 ----
+    def test_09_foreign_project_rejected_before_pending(self):
+        payload = self._run(
+            [
+                call(
+                    "create_task",
+                    {"project_id": 999999, "title": "越权任务", "due_date": "2026-12-05"},
+                ),
+                say("好"),
+            ]
+        )
+        results = self._tool_results(payload)
+        self.assertTrue(results[0].get("error"), results)
+        self.assertIn("项目", results[0]["error"])
+        self.assertEqual(payload["pending_writes"], [], "越权项目不该生成待确认")
+
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 
 
 
