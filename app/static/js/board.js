@@ -446,6 +446,40 @@ async function refresh() {
   state.tasks = await loadTasks();
   renderTagOptions();
   renderBoard();
+  notifyTasksChanged();
+}
+
+/* ---------- 给 stats.js 用的只读出口（避免两个模块互相 import） ---------- */
+
+const taskListeners = new Set();
+
+/** 任务列表变化时回调，stats.js 用它保持与看板一致。 */
+export function onTasksChanged(handler) {
+  if (typeof handler !== 'function') return () => {};
+  taskListeners.add(handler);
+  return () => taskListeners.delete(handler);
+}
+
+export function getTasks() {
+  return state.tasks;
+}
+
+export function getProjects() {
+  return state.projects;
+}
+
+export function getMembers() {
+  return state.members;
+}
+
+function notifyTasksChanged() {
+  taskListeners.forEach((handler) => {
+    try {
+      handler(state.tasks, { projectId: state.projectId });
+    } catch (error) {
+      console.error('[board] 任务变更回调失败', error);
+    }
+  });
 }
 
 /** 把 mock/真实成员填进筛选栏和弹窗的指下拉。 */
