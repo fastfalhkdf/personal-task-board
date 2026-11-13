@@ -1,4 +1,4 @@
-"""邮件与公文助手配置。"""
+"""个人任务与项目看板配置。"""
 from __future__ import annotations
 
 from functools import lru_cache
