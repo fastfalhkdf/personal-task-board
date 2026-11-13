@@ -1,9 +1,9 @@
 # 个人任务与项目看板 · API 契约
 
-版本 **V0.1** ｜ 2026-11-13 ｜ 骨架：戴罗轩
+版本 **V0.2** ｜ 2026-11-13 ｜ 骨架：戴罗轩；tasks 节：程熙
 
 > 本文件是前后端联调的唯一接口事实源。改动先改本文件、群里同步、前端确认，再动代码。
-> 本版只写全 projects / members 两节；tasks 由程熙补，agent 由郑伟健补。
+> 本版已写全 projects / members / tasks 三节；agent 节由郑伟健补。
 
 ---
 
@@ -34,20 +34,28 @@
 
 ---
 
-## 1. 任务接口（程熙负责，待补全）
+## 1. 任务接口（程熙负责，状态：已实现）
 
-> 代码已合入 main，详细请求/响应字段由程熙在本节补齐。
+> 对应实现：`app/routers/tasks.py` + `app/schemas.py`，权限统一走 `app/permissions.py`；接口测试 12 条随 `tests/test_tasks_api.py` 合入 main。
 
-| 方法 | 路径 | 说明 | 状态 |
-|---|---|---|---|
-| GET | /api/tasks | 筛选/分页列表 | 已实现，字段待补 |
-| POST | /api/tasks | 创建任务 | 已实现，字段待补 |
-| PATCH | /api/tasks/{id} | 更新任务 | 已实现，字段待补 |
-| DELETE | /api/tasks/{id} | 删除任务 | 已实现，字段待补 |
-| GET | /api/tasks/today | 今日待办/逾期/完成率 | 已实现，字段待补 |
-| GET | /api/tasks/stats | 统计 | 已实现，字段待补 |
+| 方法 | 路径 | 请求 | 响应 | 错误 |
+|---|---|---|---|---|
+| GET | /api/tasks | query：status、project_id、priority、tag、assignee_id、q、due(today\|overdue\|week)、limit(默认 100，≤500)、offset | {items:[Task], total, truncated} | 401 |
+| GET | /api/tasks/today | — | {today:[Task], overdue:[Task], done_rate} | 401 |
+| GET | /api/tasks/stats | — | {total, done, overdue} | 401 |
+| POST | /api/tasks | {title\*、description?、project_id?、priority?(low/medium/high)、due_date?(YYYY-MM-DD)、assignee_id?、tags?(≤10，自动去重去空白)} | Task，201 | 401 / 404(项目非成员) / 422 |
+| PATCH | /api/tasks/{id} | 任意子集：{title?、description?、status?(todo/in_progress/blocked/done)、priority?、due_date?(null=清空)、project_id?(null=移出项目)、assignee_id?(null=取消)、sort_order?} | Task，200 | 401 / 404(越权) / 422 |
+| DELETE | /api/tasks/{id} | — | 204 | 401 / 404(项目任务仅 owner 角色可删) |
 
----
+校验要点：REST 只强制 title（三件套是 Agent 侧规则）；指派非项目成员 → 422；PATCH 用 `model_fields_set` 区分"未传"与"显式置 null"；换项目时原指派对象不在新项目则自动清空；状态置 done 写 `completed_at`、撤 done 清空。
+
+Task 结构：
+
+```json
+{ "id": 1, "title": "...", "description": "", "status": "todo", "priority": "medium",
+  "due_date": "2026-11-14", "project_id": 1, "assignee_id": null, "sort_order": 0.0,
+  "completed_at": null, "created_at": "...", "updated_at": "...", "tags": ["python"] }
+```
 
 ## 2. 项目接口（戴罗轩）
 
@@ -260,3 +268,4 @@ role 只能是 owner / member。响应 200：同 3.1 的单个成员对象。
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | V0.1 | 2026-11-13 | 戴罗轩建骨架；写全 projects / members / board 三节；tasks、agent 留待对应负责人补齐 |
+| V0.2 | 2026-11-13 | 补全 tasks 节（程熙） |
