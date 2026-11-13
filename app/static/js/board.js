@@ -321,6 +321,181 @@ function renderBoard() {
   });
 }
 
+/* ---------- 拖拽换列 / 列内排序 ---------- */
+
+const SORT_STEP = 1024;
+
+const dragState = {
+  id: null,
+  active: false,
+  dropped: false,
+};
+
+function taskById(id) {
+  return state.tasks.find((task) => String(task.id) === String(id)) || null;
+}
+
+function siblingCards(card) {
+  const parent = card.parentElement;
+  if (!parent) return { prev: null, next: null };
+  const cards = [...parent.children].filter((el) => el.classList.contains('task-card'));
+  const index = cards.indexOf(card);
+  return {
+    prev: index > 0 ? cards[index - 1] : null,
+    next: index >= 0 && index < cards.length - 1 ? cards[index + 1] : null,
+  };
+}
+
+function orderOf(card) {
+  const task = card ? taskById(card.dataset.id) : null;
+  return task ? Number(task.sort_order) || 0 : 0;
+}
+
+/**
+ * 按 DOM 里的落点算新的 sort_order（§4.2：同列 1024 步长插入）。
+ * 相邻两条之间没有空隙（差值 ≤ 1）时要求整列重排，避免浮点精度问题。
+ */
+function computeSortOrder(card) {
+  const { prev, next } = siblingCards(card);
+  const prevOrder = orderOf(prev);
+  const nextOrder = orderOf(next);
+
+  if (!prev && !next) return { sortOrder: SORT_STEP, renumber: false };
+  if (!prev) {
+    if (nextOrder > 1) return { sortOrder: Math.floor(nextOrder / 2), renumber: false };
+    return { sortOrder: 0, renumber: true };
+  }
+  if (!next) return { sortOrder: prevOrder + SORT_STEP, renumber: false };
+  if (nextOrder - prevOrder > 1) {
+    return { sortOrder: Math.floor((prevOrder + nextOrder) / 2), renumber: false };
+  }
+  return { sortOrder: 0, renumber: true };
+}
+
+/** 越界时整列重排：按当前 DOM 顺序重新发号 1024、2048、3072…… */
+function renumberColumn(status) {
+  const body = document.querySelector(`.column-body[data-status="${status}"]`);
+  if (!body) return;
+  const cards = [...body.querySelectorAll('.task-card')];
+  cards.forEach((card, index) => {
+    const task = taskById(card.dataset.id);
+    if (task) task.sort_order = (index + 1) * SORT_STEP;
+  });
+}
+
+function clearDragStyles() {
+  document.querySelectorAll('.task-card.is-dragging').forEach((el) => el.classList.remove('is-dragging'));
+  document.querySelectorAll('.column-body.drag-over').forEach((el) => el.classList.remove('drag-over'));
+}
+
+function moveCardTo(event, body) {
+  const dragging = document.querySelector('.task-card.is-dragging');
+  if (!dragging) return;
+  const hint = body.querySelector('.empty-hint');
+  if (hint) hint.remove();
+  const cards = [...body.querySelectorAll('.task-card')].filter((card) => card !== dragging);
+  const after = cards.find((card) => {
+    const rect = card.getBoundingClientRect();
+    return event.clientY < rect.top + rect.height / 2;
+  });
+  if (after) body.insertBefore(dragging, after);
+  else body.appendChild(dragging);
+}
+
+async function finishDrop(body) {
+  const dragging = document.querySelector('.task-card.is-dragging');
+  if (!dragging) return;
+  const task = taskById(dragging.dataset.id);
+  if (!task) return;
+
+  const targetStatus = body.dataset.status;
+  const { sortOrder, renumber } = computeSortOrder(dragging);
+  const snapshot = { status: task.status, sort_order: task.sort_order };
+
+  if (renumber) renumberColumn(targetStatus);
+  task.status = targetStatus;
+  if (!renumber) task.sort_order = sortOrder;
+
+  // 没有实际变化就别发请求（拖回原位）
+  if (!renumber && snapshot.status === task.status && snapshot.sort_order === task.sort_order) {
+    renderBoard();
+    return;
+  }
+
+  renderBoard();
+  notifyTasksChanged();
+
+  try {
+    if (!USE_MOCK) {
+      const payload = { status: task.status, sort_order: task.sort_order };
+      await api.tasks.update(task.id, payload);
+    }
+  } catch (error) {
+    task.status = snapshot.status;
+    task.sort_order = snapshot.sort_order;
+    renderBoard();
+    notifyTasksChanged();
+    state.ctx.toast(`移动失败，已还原：${error.message}`);
+  }
+}
+
+function wireDragAndDrop() {
+  const board = document.querySelector('#board');
+  if (!board) return;
+
+  board.addEventListener('dragstart', (event) => {
+    const card = event.target.closest('.task-card');
+    if (!card) return;
+    dragState.id = card.dataset.id;
+    dragState.active = true;
+    dragState.dropped = false;
+    card.classList.add('is-dragging');
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', String(card.dataset.id));
+    }
+  });
+
+  board.addEventListener('dragover', (event) => {
+    if (!dragState.active) return;
+    const body = event.target.closest('.column-body');
+    if (!body) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    document
+      .querySelectorAll('.column-body.drag-over')
+      .forEach((el) => el.classList.toggle('drag-over', el === body));
+    body.classList.add('drag-over');
+    moveCardTo(event, body);
+  });
+
+  board.addEventListener('dragleave', (event) => {
+    const body = event.target.closest('.column-body');
+    if (!body) return;
+    body.classList.remove('drag-over');
+  });
+
+  board.addEventListener('drop', async (event) => {
+    if (!dragState.active) return;
+    const body = event.target.closest('.column-body');
+    if (!body) return;
+    event.preventDefault();
+    dragState.dropped = true;
+    await finishDrop(body);
+    dragState.active = false;
+    clearDragStyles();
+  });
+
+  board.addEventListener('dragend', () => {
+    // 拖到看板外面（没有 drop）时，DOM 已被 dragover 挪动过，重渲染回到数据顺序。
+    if (dragState.active && !dragState.dropped) renderBoard();
+    dragState.active = false;
+    dragState.dropped = false;
+    clearDragStyles();
+  });
+}
+
+
 function renderProjects() {
   const select = document.querySelector('#project-switcher');
   if (!select) return;
@@ -438,6 +613,8 @@ export async function init(ctx) {
     onSave: saveTask,
     onDelete: deleteTask,
   });
+
+  wireDragAndDrop();
 
   await refresh();
 }

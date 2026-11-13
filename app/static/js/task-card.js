@@ -77,7 +77,7 @@ export function cardHtml(task) {
     : '';
   const description = task.description ? `<p>${escapeHtml(task.description)}</p>` : '';
   return (
-    `<article class="task-card" data-id="${escapeHtml(task.id)}" role="listitem" tabindex="0">` +
+    `<article class="task-card" data-id="${escapeHtml(task.id)}" role="listitem" tabindex="0" draggable="true">` +
     `<h3>${escapeHtml(task.title)}</h3>` +
     description +
     '<div class="task-meta">' +
