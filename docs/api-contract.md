@@ -1,0 +1,262 @@
+# 个人任务与项目看板 · API 契约
+
+版本 **V0.1** ｜ 2026-11-13 ｜ 骨架：戴罗轩
+
+> 本文件是前后端联调的唯一接口事实源。改动先改本文件、群里同步、前端确认，再动代码。
+> 本版只写全 projects / members 两节；tasks 由程熙补，agent 由郑伟健补。
+
+---
+
+## 0. 通用约定
+
+| 项 | 约定 |
+|---|---|
+| 前缀 | 所有接口以 /api 开头 |
+| 鉴权 | 除注册/登录/健康检查外，全部依赖 current_user；支持 Cookie 与 Authorization: Bearer <token> |
+| 成功列表 | {"items": [...], "total": n, "truncated": bool} |
+| 错误 | {"detail": "中文原因"}；权限不足/资源不存在统一 404，不返回 403 |
+| 日期 | YYYY-MM-DD；时间 ISO8601，服务端 naive UTC |
+| 字段 | JSON 一律 snake_case |
+| 角色 | owner（项目所有者）/ member（普通成员） |
+
+状态码：
+
+| 码 | 含义 |
+|---|---|
+| 200 | 查询/更新成功 |
+| 201 | 创建成功 |
+| 204 | 删除成功，无 body |
+| 400 | 参数合法但业务不允许（如未确认级联删除、移除 owner） |
+| 401 | 未登录/凭证无效 |
+| 404 | 资源不存在或无权访问（防探测） |
+| 409 | 冲突（如重复邀请） |
+| 422 | 请求字段校验失败 |
+
+---
+
+## 1. 任务接口（程熙负责，待补全）
+
+> 代码已合入 main，详细请求/响应字段由程熙在本节补齐。
+
+| 方法 | 路径 | 说明 | 状态 |
+|---|---|---|---|
+| GET | /api/tasks | 筛选/分页列表 | 已实现，字段待补 |
+| POST | /api/tasks | 创建任务 | 已实现，字段待补 |
+| PATCH | /api/tasks/{id} | 更新任务 | 已实现，字段待补 |
+| DELETE | /api/tasks/{id} | 删除任务 | 已实现，字段待补 |
+| GET | /api/tasks/today | 今日待办/逾期/完成率 | 已实现，字段待补 |
+| GET | /api/tasks/stats | 统计 | 已实现，字段待补 |
+
+---
+
+## 2. 项目接口（戴罗轩）
+
+### 2.1 GET /api/projects
+
+当前用户作为成员加入的全部项目。
+
+响应：
+
+~~~json
+{
+  "items": [
+    {
+      "id": 1,
+      "name": "AI 学习",
+      "color": "#4f7",
+      "description": "课程项目",
+      "role": "owner",
+      "member_count": 2,
+      "task_count": 5
+    }
+  ],
+  "total": 1,
+  "truncated": false
+}
+~~~
+
+### 2.2 POST /api/projects
+
+创建项目；创建者自动写入 project_members(role=owner)。
+
+请求：
+
+~~~json
+{"name": "AI 学习", "color": "#4f7", "description": "课程项目"}
+~~~
+
+| 字段 | 类型 | 必填 | 约束 |
+|---|---|---|---|
+| name | string | 是 | 1–120，去首尾空白后非空 |
+| color | string | 否 | ≤20，默认空字符串 |
+| description | string | 否 | ≤2000，默认空字符串 |
+
+响应 201：同 2.1 的单个项目对象（role=owner，member_count=1）。
+
+### 2.3 PATCH /api/projects/{id}
+
+仅项目 owner 可改；只更新显式传入的字段。
+
+请求（字段均可选）：
+
+~~~json
+{"name": "新名字", "color": "#2f6fed", "description": "新简介"}
+~~~
+
+响应 200：同 2.1 的单个项目对象。非 owner / 项目不存在 → 404。
+
+> 说明：archived 字段依赖 app/models.py 增加列（程熙单点），本版暂不支持；增加后再补本节。
+
+### 2.4 DELETE /api/projects/{id}?confirm=true
+
+仅 owner 可删；会级联删除该项目下的任务。
+
+| 参数 | 位置 | 说明 |
+|---|---|---|
+| confirm | query | 必须显式 true；缺省/false 返回 400 |
+
+响应 204 无 body。非 owner → 404。
+
+### 2.5 GET /api/projects/{id}/stats
+
+项目成员可读。
+
+响应：
+
+~~~json
+{
+  "project_id": 1,
+  "total": 5,
+  "done_rate": 0.4,
+  "by_status": {"todo": 2, "in_progress": 1, "blocked": 0, "done": 2},
+  "by_priority": {"low": 1, "medium": 3, "high": 1},
+  "member_count": 2
+}
+~~~
+
+非成员/项目不存在 → 404。
+
+---
+
+## 3. 成员接口（戴罗轩）
+
+### 3.1 GET /api/projects/{id}/members
+
+项目成员可读成员列表。
+
+响应：
+
+~~~json
+{
+  "items": [
+    {"id": 1, "user_id": 1, "email": "demo@tasks.dev", "name": "演示用户", "role": "owner"}
+  ],
+  "total": 1,
+  "truncated": false
+}
+~~~
+
+非成员/项目不存在 → 404。
+
+### 3.2 POST /api/projects/{id}/members
+
+仅 owner；按邮箱邀请已注册用户。
+
+请求：
+
+~~~json
+{"email": "member@example.com"}
+~~~
+
+| 字段 | 类型 | 必填 | 约束 |
+|---|---|---|---|
+| email | string | 是 | 3–120，服务端按小写匹配 |
+
+响应 201：
+
+~~~json
+{"id": 2, "user_id": 2, "email": "member@example.com", "name": "成员", "role": "member"}
+~~~
+
+| 情况 | 状态码 |
+|---|---|
+| 邮箱未注册 | 404 |
+| 已是项目成员 | 409 |
+| 非 owner | 404 |
+
+### 3.3 PATCH /api/projects/{id}/members/{user_id}
+
+仅 owner；改角色。
+
+请求：
+
+~~~json
+{"role": "owner"}
+~~~
+
+role 只能是 owner / member。响应 200：同 3.1 的单个成员对象。
+
+规则：
+
+- 不能把最后一名 owner 降为 member → 400；
+- 目标不是项目成员 → 404；
+- 非 owner 调用 → 404。
+
+### 3.4 DELETE /api/projects/{id}/members/{user_id}
+
+仅 owner；移除成员。
+
+响应 204 无 body。
+
+规则：不能移除 owner 角色 → 400；目标不存在 → 404；非 owner → 404。
+
+---
+
+## 4. 看板接口（戴罗轩）
+
+### 4.1 GET /api/board?project_id=<id>
+
+项目成员可读；一次返回四列卡片，供看板首屏渲染。
+
+响应：
+
+~~~json
+{
+  "project": {
+    "id": 1, "name": "AI 学习", "color": "#4f7",
+    "description": "", "role": "owner",
+    "member_count": 2, "task_count": 5
+  },
+  "columns": {
+    "todo": [
+      {"id": 1, "title": "任务", "description": "", "status": "todo",
+       "priority": "medium", "due_date": "2026-11-20", "assignee_id": null,
+       "sort_order": 0, "tags": ["python"]}
+    ],
+    "in_progress": [], "blocked": [], "done": []
+  }
+}
+~~~
+
+非成员/项目不存在 → 404。
+
+---
+
+## 5. Agent 接口（郑伟健负责，待补全）
+
+> 现有 /api/agent/run、/api/agent/confirm 保留；新增 /pending、/cancel 等由郑伟健在本节补齐。
+
+| 方法 | 路径 | 说明 | 状态 |
+|---|---|---|---|
+| POST | /api/agent/run | Agent 查询/操作 | 待郑伟健补全 |
+| POST | /api/agent/confirm | 确认写操作 | 待郑伟健补全 |
+| GET | /api/agent/pending | 待确认列表 | 待郑伟健补全 |
+| POST | /api/agent/cancel | 取消待确认 | 待郑伟健补全 |
+
+---
+
+## 6. 修订记录
+
+| 版本 | 日期 | 变更 |
+|---|---|---|
+| V0.1 | 2026-11-13 | 戴罗轩建骨架；写全 projects / members / board 三节；tasks、agent 留待对应负责人补齐 |
