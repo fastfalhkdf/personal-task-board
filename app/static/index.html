@@ -1,1 +1,959 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>个人任务与项目看板</title><style>body{margin:0;background:linear-gradient(135deg,#f5f0e8,#eaf2ec);font-family:"PingFang SC","Microsoft YaHei",sans-serif;color:#1d2a23}.wrap{width:min(1000px,calc(100% - 24px));margin:24px auto}.card{background:#fffdf8;border:1px solid #ddd6c9;border-radius:18px;box-shadow:0 16px 45px #26342c16;padding:18px;margin-bottom:15px}.top{display:flex;justify-content:space-between;align-items:center}.brand{font:700 23px Georgia,"Songti SC",serif}.muted{color:#6b766e;font-size:13px}.hidden{display:none}.chat{height:300px;overflow:auto;background:#f7f4ed;border-radius:11px;padding:8px}.msg{max-width:88%;padding:10px 12px;border-radius:12px;white-space:pre-wrap;line-height:1.6;margin:8px 0}.user{margin-left:auto;background:#3f755b;color:#fff}.assistant{background:#fff;border:1px solid #ddd6c9}textarea,input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #ddd6c9;border-radius:10px;font:inherit}textarea{min-height:90px}.btn{border:0;border-radius:10px;padding:10px 14px;background:#3f755b;color:#fff;font-weight:700;cursor:pointer}.pending{margin-top:10px;padding:10px;border:1px solid #ddc49c;border-radius:10px;background:#fff8e9}.pending pre{white-space:pre-wrap;max-height:150px;overflow:auto;font-size:11px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}.toast{position:fixed;right:18px;bottom:18px;padding:11px 14px;background:#243027;color:#fff;border-radius:10px}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style></head><body><main id="auth" class="wrap"><section class="card"><div class="brand">个人任务与项目看板</div><p class="muted">课程资料 · 学习计划 · 练习与错题</p><p>邮箱 <input id="email" value="demo@course.dev"></p><p>密码 <input id="password" type="password" value="demo1234"></p><button id="login" class="btn">登录</button><p class="muted">demo@course.dev / demo1234</p></section></main><main id="app" class="wrap hidden"><div class="card top"><div><div class="brand">个人任务与项目看板</div><div class="muted">Agent 基于真实课程资料回答</div></div><button id="logout" class="btn">退出</button></div><div class="grid"><section class="card"><h2>学习与练习</h2><div id="messages" class="chat"><div class="msg assistant">你可以查询课程资料、学习进度、错题，也能保存学习计划或练习结果。写操作会先请你确认。</div></div><textarea id="question" placeholder="例如：查询 Python 基础，并解释缩进规则"></textarea><button id="send" class="btn">发送</button><div id="pending"></div><details id="trace"></details></section><section class="card"><h2>学习进度</h2><div id="progress" class="muted"></div></section></div></main><div id="toast" class="toast hidden"></div><script type="module">import{request}from'/static/request.js';const $=s=>document.querySelector(s);function toast(m){$('#toast').textContent=m;$('#toast').classList.remove('hidden');setTimeout(()=>$('#toast').classList.add('hidden'),2500)}async function load(){let p=await request('/api/tasks/stats');$('#progress').innerHTML=`任务 ${p.total} · 完成 ${p.done} · 逾期 ${p.overdue}`}async function login(){try{await request('/api/auth/login',{method:'POST',body:{email:$('#email').value,password:$('#password').value}});$('#auth').classList.add('hidden');$('#app').classList.remove('hidden');await load()}catch(e){toast(e.message)}}function msg(r,t){let n=document.createElement('div');n.className='msg '+r;n.textContent=t;$('#messages').appendChild(n);$('#messages').scrollTop=$('#messages').scrollHeight}function renderPending(rows){$('#pending').innerHTML=(rows||[]).map(x=>`<div class="pending"><strong>${x.tool}</strong> ${x.id}<pre>${JSON.stringify(x.args,null,2)}</pre><button class="btn" data-id="${x.id}">确认写入</button></div>`).join('');$('#pending').querySelectorAll('[data-id]').forEach(b=>b.onclick=async()=>{try{await request('/api/agent/confirm',{method:'POST',body:{action_id:b.dataset.id}});toast('写入完成');$('#pending').innerHTML='';await load()}catch(e){toast(e.message)}})}async function send(){let q=$('#question').value.trim();if(!q)return;msg('user',q);$('#question').value='';try{let r=await request('/api/agent/run',{method:'POST',body:{question:q,max_steps:6},timeout:60000});msg('assistant',r.answer);$('#trace').innerHTML=`<summary>调用轨迹 ${r.tool_calls} 次</summary>${r.steps.map(s=>`<div>${s.kind} ${s.tool||''}<br>${s.content}</div>`).join('')}`;renderPending(r.pending_writes)}catch(e){msg('assistant','失败：'+e.message)}}$('#login').onclick=login;$('#send').onclick=send;$('#logout').onclick=async()=>{await request('/api/auth/logout',{method:'POST'});location.reload()};request('/api/auth/me').then(async()=>{$('#auth').classList.add('hidden');$('#app').classList.remove('hidden');await load()}).catch(()=>{});</script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>个人任务与项目看板</title>
+<link rel="icon" href="data:,">
+<!--
+  index.html 只负责骨架与布局，不含业务逻辑（设计方案 §7.1）。
+  逻辑一律挂在下列 js/* 模块上，由 js/app.js 动态 import 挂载（加载失败不阻塞）：
+
+    js/app.js       （卓江城）模块挂载入口
+    js/api.js       （卓江城）接口封装，按 docs/api-contract.md 写
+    js/auth.js      （付佳宝）登录态、路由守卫 → 操作 #email #password #login #auth-error #logout #user-name
+    js/board.js     （卓江城）四列渲染、拖拽、排序 → 操作 #board .column-body[data-status] .column-count[data-count]
+    js/task-card.js （卓江城）卡片渲染与编辑弹窗 → 操作 .task-card、#task-modal 内 #task-* 字段
+    js/stats.js     （卓江城）统计面板 → 操作 #stats-panel #stats-today-count #stats-overdue-count #stats-done-rate #stats-today #stats-bars
+    js/chat.js      （付佳宝）对话抽屉 → 操作 #messages #question #send #trace #drawer-toggle
+    js/pending.js   （付佳宝）待确认 diff 卡片 → 操作 #pending（每项 .pending，含确认/取消按钮）
+    js/members.js   （付佳宝）成员面板与指派下拉 → 操作 #member-list #member-modal #task-assignee
+
+  约定：状态视图切换用 #app 的 .hidden 类；抽屉开合用 body 上的 .drawer-open 类；
+  弹窗用原生 <dialog> 的 showModal()/close()；全局提示写 #toast 的文本并摘掉 .hidden。
+  登录区故意不包 form 提交：auth.js 直接绑 #login 的 click，与旧 inline 脚本的写法一致；
+  失败提示写进 #auth-error 并摘掉 .hidden。
+-->
+<style>
+  :root {
+    --paper: #fffdf8;
+    --paper-soft: #f7f4ed;
+    --bg-a: #f5f0e8;
+    --bg-b: #eaf2ec;
+    --ink: #1d2a23;
+    --muted: #6b766e;
+    --line: #ddd6c9;
+    --line-soft: #e8e2d6;
+    --accent: #3f755b;
+    --accent-ink: #2f5b46;
+    --accent-wash: #e7efe9;
+    --warn: #b9741f;
+    --warn-wash: #fdf3e3;
+    --danger: #a63d33;
+    --danger-wash: #fbeeec;
+    --done: #4f7f63;
+    --shadow: 0 16px 45px #26342c16;
+    --radius: 18px;
+    --radius-sm: 12px;
+  }
+
+  *,
+  *::before,
+  *::after { box-sizing: border-box; }
+
+  html,
+  body { height: 100%; }
+
+  body {
+    margin: 0;
+    background: linear-gradient(135deg, var(--bg-a), var(--bg-b));
+    color: var(--ink);
+    font: 14px/1.6 "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3 { margin: 0; font-weight: 700; }
+
+  .brand { font: 700 22px Georgia, "Songti SC", serif; letter-spacing: 0.5px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .hidden { display: none !important; }
+
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.92em;
+    background: var(--paper-soft);
+    border: 1px solid var(--line-soft);
+    border-radius: 6px;
+    padding: 1px 5px;
+  }
+
+  /* ---------- 通用控件 ---------- */
+  .btn {
+    border: 0;
+    border-radius: 10px;
+    padding: 9px 14px;
+    background: var(--accent);
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn:hover { filter: brightness(1.06); }
+  .btn:focus-visible,
+  .icon-btn:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--accent-ink);
+    border: 1px solid var(--line);
+    font-weight: 600;
+  }
+
+  .btn-danger { background: var(--danger); }
+
+  .icon-btn {
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    font: 600 18px/1 inherit;
+    line-height: 1;
+    padding: 4px 7px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .icon-btn:hover { background: var(--paper-soft); color: var(--ink); border-color: var(--line-soft); }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+    color: inherit;
+    font: inherit;
+  }
+
+  textarea { min-height: 84px; resize: vertical; }
+  select { cursor: pointer; }
+
+  /* ---------- 登录视图 ---------- */
+  .auth-view {
+    min-height: 100%;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+
+  .auth-card {
+    width: min(420px, 100%);
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 26px;
+  }
+
+  .auth-card .brand { font-size: 24px; }
+  .auth-card .auth-fields { display: grid; gap: 14px; margin: 20px 0 0; }
+
+  .field { display: grid; gap: 5px; }
+  .field > span { font-size: 13px; color: var(--muted); }
+
+  .form-error {
+    margin: 0;
+    padding: 9px 11px;
+    border: 1px solid #e3c2b8;
+    border-radius: 10px;
+    background: var(--danger-wash);
+    color: var(--danger);
+    font-size: 13px;
+  }
+
+  .auth-hint {
+    margin: 16px 0 0;
+    padding-top: 14px;
+    border-top: 1px dashed var(--line-soft);
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+
+  /* ---------- 主壳 ---------- */
+  .app-shell {
+    height: 100%;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    /* 显式列宽，避免看板的 min-content 把整壳撑宽（页面横向滚动） */
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* ---------- 顶栏 ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 10px 16px;
+    background: #ffffffcc;
+    border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(6px);
+  }
+
+  .topbar .brand { font-size: 19px; white-space: nowrap; }
+  .topbar-divider { width: 1px; height: 22px; background: var(--line); flex: none; }
+
+  #project-switcher { width: auto; min-width: 150px; max-width: 220px; }
+
+  .filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .filter-bar select,
+  .filter-bar input {
+    width: auto;
+    flex: 0 0 auto;
+    font-size: 13px;
+    padding: 6px 9px;
+    border-radius: 9px;
+  }
+
+  #filter-q { min-width: 150px; }
+  #filter-tag { width: 110px; }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+  }
+
+  .user-menu {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 10px;
+    border-left: 1px solid var(--line);
+  }
+
+  #user-name { font-weight: 600; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ---------- 工作区 ---------- */
+  .workspace {
+    display: grid;
+    grid-template-columns: 236px minmax(0, 1fr);
+    gap: 14px;
+    padding: 14px 16px 16px;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .panel {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 28px #26342c0f;
+    padding: 12px 13px;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .panel-head h2 {
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .panel-head .btn { padding: 4px 9px; font-size: 12px; }
+
+  .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+
+  .list button {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .list button:hover { background: var(--paper-soft); border-color: var(--line-soft); }
+  .list button[aria-current="true"] { background: var(--accent-wash); border-color: #c7dbcf; font-weight: 600; }
+  .list .swatch { width: 9px; height: 9px; border-radius: 3px; background: var(--accent); flex: none; }
+  .list .count { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+  .empty-hint {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+
+  /* ---------- 看板 ---------- */
+  .board {
+    display: grid;
+    /* 列宽下限 200px：窄屏时整块横向滚动，而不是把四列压成一条 */
+    grid-template-columns: repeat(4, minmax(200px, 1fr));
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: auto;
+  }
+
+  .board-column {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    background: #ffffff9e;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .board-column[data-status="todo"] { --col-color: #7d8b80; }
+  .board-column[data-status="in_progress"] { --col-color: var(--warn); }
+  .board-column[data-status="blocked"] { --col-color: var(--danger); }
+  .board-column[data-status="done"] { --col-color: var(--done); }
+
+  .column-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 13px;
+    border-bottom: 1px dashed var(--line);
+    background: #fffdf8b8;
+  }
+
+  .column-head h2 { font-size: 14px; display: flex; align-items: center; gap: 7px; }
+  .column-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--col-color); flex: none; }
+
+  .column-count {
+    margin-left: auto;
+    min-width: 22px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--paper-soft);
+    border: 1px solid var(--line-soft);
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+  }
+
+  .column-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .column-body.drag-over { background: var(--accent-wash); box-shadow: inset 0 0 0 2px #b9d2c3; }
+
+  /* ---------- 任务卡（js/task-card.js 渲染，样式基类固定） ---------- */
+  .task-card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--col-color, var(--accent));
+    border-radius: var(--radius-sm);
+    box-shadow: 0 6px 18px #26342c12;
+    padding: 10px 11px;
+    cursor: grab;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  .task-card:hover { transform: translateY(-1px); box-shadow: 0 10px 22px #26342c1a; }
+  .task-card:active { cursor: grabbing; }
+  .task-card.is-dragging { opacity: 0.55; }
+  .task-card h3 { font-size: 14px; line-height: 1.45; }
+  .task-card p { margin: 5px 0 0; color: var(--muted); font-size: 12.5px; }
+
+  .task-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--accent-wash);
+    color: var(--accent-ink);
+    font-size: 11.5px;
+  }
+
+  .badge-priority { padding: 1px 7px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+  .badge-priority.is-high { background: var(--danger-wash); color: var(--danger); }
+  .badge-priority.is-medium { background: var(--warn-wash); color: var(--warn); }
+  .badge-priority.is-low { background: var(--paper-soft); color: var(--muted); }
+  .due { white-space: nowrap; }
+  .due.is-overdue { color: var(--danger); font-weight: 700; }
+
+  /* ---------- 右侧抽屉：Agent 对话 ---------- */
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    background: #1d2a2340;
+    z-index: 30;
+  }
+
+  .drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    z-index: 40;
+    height: 100%;
+    width: min(390px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    background: var(--paper);
+    border-left: 1px solid var(--line);
+    box-shadow: -18px 0 45px #26342c1f;
+    transform: translateX(102%);
+    transition: transform 0.22s ease;
+  }
+
+  body.drawer-open .drawer { transform: none; }
+
+  .drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .drawer-head h2 { font-size: 15px; }
+
+  .chat {
+    flex: 1 1 auto;
+    min-height: 120px;
+    overflow-y: auto;
+    background: var(--paper-soft);
+    border-radius: var(--radius-sm);
+    padding: 10px;
+  }
+
+  .msg {
+    max-width: 88%;
+    padding: 9px 12px;
+    border-radius: 12px;
+    white-space: pre-wrap;
+    line-height: 1.6;
+    margin: 8px 0;
+    font-size: 13.5px;
+  }
+
+  .msg.user { margin-left: auto; background: var(--accent); color: #fff; }
+  .msg.assistant { background: #fff; border: 1px solid var(--line); }
+
+  .drawer-compose { display: grid; gap: 8px; }
+  .drawer-compose textarea { min-height: 72px; }
+
+  .pending-list { display: grid; gap: 8px; max-height: 40%; overflow-y: auto; }
+
+  .pending {
+    padding: 10px;
+    border: 1px solid #ddc49c;
+    border-radius: 11px;
+    background: #fff8e9;
+    font-size: 12.5px;
+  }
+
+  .pending strong { font-size: 13px; }
+  .pending pre {
+    margin: 6px 0 8px;
+    white-space: pre-wrap;
+    max-height: 150px;
+    overflow: auto;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  .pending .pending-actions { display: flex; gap: 8px; }
+  .pending .pending-diff { display: grid; gap: 2px; margin: 6px 0 8px; }
+  .pending .pending-diff .from { color: var(--danger); text-decoration: line-through; }
+  .pending .pending-diff .to { color: var(--accent-ink); font-weight: 600; }
+
+  .trace { border-top: 1px dashed var(--line-soft); padding-top: 8px; font-size: 12.5px; color: var(--muted); }
+  .trace summary { cursor: pointer; }
+  .trace > div { margin-top: 6px; }
+
+  /* ---------- 弹窗 ---------- */
+  .dialog {
+    width: min(560px, calc(100% - 32px));
+    max-height: calc(100% - 48px);
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--paper);
+    color: var(--ink);
+    box-shadow: var(--shadow);
+    overflow: auto;
+  }
+
+  .dialog::backdrop { background: #1d2a234d; }
+
+  .dialog-head {
+    position: sticky;
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 14px 18px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .dialog-head h2 { font-size: 16px; }
+  .dialog-body { display: grid; gap: 12px; padding: 16px 18px; }
+  .dialog-body .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .dialog-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 18px 16px;
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .dialog-foot .spacer { margin-right: auto; }
+
+  /* ---------- 统计面板 ---------- */
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
+  .stat {
+    display: grid;
+    gap: 2px;
+    padding: 12px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    background: var(--paper-soft);
+  }
+
+  .stat b { font: 700 22px/1.2 Georgia, "Songti SC", serif; }
+  .stat span { color: var(--muted); font-size: 12px; }
+
+  .bars { display: grid; gap: 8px; }
+  .bar-row { display: grid; grid-template-columns: 84px 1fr auto; align-items: center; gap: 8px; font-size: 12.5px; }
+  .bar-track { height: 9px; border-radius: 999px; background: var(--paper-soft); border: 1px solid var(--line-soft); overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+
+  /* ---------- 全局提示 ---------- */
+  .toast {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 60;
+    max-width: min(360px, calc(100% - 36px));
+    padding: 11px 14px;
+    background: #243027;
+    color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px #1d2a2333;
+    font-size: 13px;
+  }
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width: 1080px) {
+    .workspace { grid-template-columns: 200px minmax(0, 1fr); }
+    .topbar .brand { display: none; }
+  }
+
+  @media (max-width: 768px) {
+    .topbar {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px 12px;
+    }
+
+    .topbar-divider { display: none; }
+    #project-switcher { flex: 1 1 auto; max-width: none; }
+    .topbar-right { margin-left: auto; }
+
+    /* 筛选栏换到第二行，自身横向滚动，不挤压右侧按钮 */
+    .filter-bar {
+      order: 3;
+      flex: 1 1 100%;
+      flex-wrap: nowrap;
+      padding-bottom: 0;
+    }
+
+    .workspace {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      padding: 10px 12px 12px;
+    }
+
+    .sidebar {
+      flex-direction: row;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+
+    .panel { flex: 0 0 auto; min-width: 200px; }
+
+    /* 四列看板在窄屏横向滚动（列宽下限见 .board 的 minmax(200px, 1fr)） */
+    .board {
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 4px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== 登录视图（auth.js 负责切换与校验） ========== -->
+<main id="auth" class="auth-view">
+  <section class="auth-card">
+    <div class="brand">个人任务与项目看板</div>
+    <p class="muted">项目 · 任务 · 截止日期 · Agent 协作</p>
+
+    <div class="auth-fields">
+      <label class="field">
+        <span>邮箱</span>
+        <input id="email" name="email" type="email" autocomplete="username" value="demo@tasks.dev">
+      </label>
+      <label class="field">
+        <span>密码</span>
+        <input id="password" name="password" type="password" autocomplete="current-password" value="demo1234">
+      </label>
+      <p id="auth-error" class="form-error hidden" role="alert"></p>
+      <button id="login" class="btn" type="button">登录</button>
+    </div>
+
+    <p class="auth-hint">
+      演示账号 <code>demo@tasks.dev</code> / <code>demo1234</code>，由 <code>seed.py</code> 启动时幂等注入。
+    </p>
+  </section>
+</main>
+
+<!-- ========== 主视图：顶栏 / 侧栏 / 四列看板 ========== -->
+<div id="app" class="app-shell hidden">
+
+  <header id="topbar" class="topbar">
+    <div class="brand">个人任务与项目看板</div>
+    <div class="topbar-divider"></div>
+
+    <label class="sr-only" for="project-switcher">项目切换</label>
+    <select id="project-switcher">
+      <option value="">全部项目</option>
+    </select>
+
+    <div id="filter-bar" class="filter-bar">
+      <label class="sr-only" for="filter-priority">优先级</label>
+      <select id="filter-priority">
+        <option value="">全部优先级</option>
+        <option value="high">高</option>
+        <option value="medium">中</option>
+        <option value="low">低</option>
+      </select>
+
+      <label class="sr-only" for="filter-assignee">指派成员</label>
+      <select id="filter-assignee">
+        <option value="">全部成员</option>
+        <option value="me">仅看我</option>
+      </select>
+
+      <label class="sr-only" for="filter-tag">标签</label>
+      <input id="filter-tag" type="text" placeholder="标签" list="tag-options">
+      <datalist id="tag-options"></datalist>
+
+      <label class="sr-only" for="filter-q">关键词</label>
+      <input id="filter-q" type="search" placeholder="搜索标题或描述">
+
+      <label class="sr-only" for="filter-due">截止范围</label>
+      <select id="filter-due">
+        <option value="">全部时间</option>
+        <option value="today">今日到期</option>
+        <option value="overdue">已逾期</option>
+        <option value="week">未来七天</option>
+      </select>
+
+      <button id="filter-reset" class="btn btn-ghost" type="button">重置</button>
+    </div>
+
+    <div class="topbar-right">
+      <button id="stats-toggle" class="btn btn-ghost" type="button">统计</button>
+      <button id="drawer-toggle" class="btn" type="button" aria-controls="drawer" aria-expanded="false">Agent</button>
+      <div class="user-menu">
+        <span id="user-name"></span>
+        <button id="logout" class="btn btn-ghost" type="button">退出</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside id="sidebar" class="sidebar">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>我的项目</h2>
+          <button id="project-new" class="btn btn-ghost" type="button">新建</button>
+        </div>
+        <ul id="project-list" class="list"></ul>
+        <p id="project-empty" class="empty-hint">还没有项目，点「新建」创建第一个。</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>项目成员</h2>
+          <button id="member-manage" class="btn btn-ghost" type="button">邀请</button>
+        </div>
+        <ul id="member-list" class="list"></ul>
+        <p id="member-empty" class="empty-hint">选择项目后显示成员。</p>
+      </section>
+    </aside>
+
+    <main id="board" class="board">
+      <section class="board-column" data-status="todo" aria-labelledby="col-todo">
+        <header class="column-head">
+          <h2 id="col-todo"><span class="column-dot"></span>待办</h2>
+          <span class="column-count" data-count="todo">0</span>
+          <button class="icon-btn column-add" data-add="todo" type="button" aria-label="在待办列新建任务">+</button>
+        </header>
+        <div class="column-body" data-status="todo" role="list"></div>
+      </section>
+
+      <section class="board-column" data-status="in_progress" aria-labelledby="col-in-progress">
+        <header class="column-head">
+          <h2 id="col-in-progress"><span class="column-dot"></span>进行中</h2>
+          <span class="column-count" data-count="in_progress">0</span>
+          <button class="icon-btn column-add" data-add="in_progress" type="button" aria-label="在进行中列新建任务">+</button>
+        </header>
+        <div class="column-body" data-status="in_progress" role="list"></div>
+      </section>
+
+      <section class="board-column" data-status="blocked" aria-labelledby="col-blocked">
+        <header class="column-head">
+          <h2 id="col-blocked"><span class="column-dot"></span>阻塞</h2>
+          <span class="column-count" data-count="blocked">0</span>
+          <button class="icon-btn column-add" data-add="blocked" type="button" aria-label="在阻塞列新建任务">+</button>
+        </header>
+        <div class="column-body" data-status="blocked" role="list"></div>
+      </section>
+
+      <section class="board-column" data-status="done" aria-labelledby="col-done">
+        <header class="column-head">
+          <h2 id="col-done"><span class="column-dot"></span>已完成</h2>
+          <span class="column-count" data-count="done">0</span>
+          <button class="icon-btn column-add" data-add="done" type="button" aria-label="在已完成列新建任务">+</button>
+        </header>
+        <div class="column-body" data-status="done" role="list"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ========== 右侧抽屉：Agent 对话 ========== -->
+<div id="drawer-backdrop" class="backdrop hidden"></div>
+
+<aside id="drawer" class="drawer" aria-label="Agent 对话" aria-hidden="true">
+  <header class="drawer-head">
+    <h2>Agent 对话</h2>
+    <button id="drawer-close" class="icon-btn" type="button" aria-label="关闭对话抽屉">×</button>
+  </header>
+
+  <div id="messages" class="chat" role="log" aria-live="polite">
+    <div class="msg assistant">可以问我任务统计、今天要做什么，也能让我建任务或改状态。写操作会先给你看差异，确认后才生效。</div>
+  </div>
+
+  <div class="drawer-compose">
+    <label class="sr-only" for="question">给 Agent 的消息</label>
+    <textarea id="question" placeholder="例如：把「写周报」移到进行中"></textarea>
+    <button id="send" class="btn" type="button">发送</button>
+  </div>
+
+  <section id="pending" class="pending-list" aria-label="待确认的写操作"></section>
+  <details id="trace" class="trace">
+    <summary>调用轨迹</summary>
+    <p class="muted">Agent 每次调用的工具与返回会显示在这里。</p>
+  </details>
+</aside>
+
+<!-- ========== 统计面板 ========== -->
+<dialog id="stats-panel" class="dialog" aria-labelledby="stats-title">
+  <header class="dialog-head">
+    <h2 id="stats-title">统计</h2>
+    <button class="icon-btn" type="button" data-close aria-label="关闭统计">×</button>
+  </header>
+  <div class="dialog-body">
+    <div class="stats-grid">
+      <div class="stat"><b id="stats-today-count">0</b><span>今日到期</span></div>
+      <div class="stat"><b id="stats-overdue-count">0</b><span>逾期</span></div>
+      <div class="stat"><b id="stats-done-rate">0%</b><span>完成率</span></div>
+    </div>
+    <div id="stats-bars" class="bars"></div>
+    <ul id="stats-today" class="list"></ul>
+  </div>
+</dialog>
+
+<!-- ========== 任务编辑弹窗 ========== -->
+<dialog id="task-modal" class="dialog" aria-labelledby="task-modal-title">
+  <form id="task-form">
+    <header class="dialog-head">
+      <h2 id="task-modal-title">任务</h2>
+      <button class="icon-btn" type="button" data-close aria-label="关闭任务弹窗">×</button>
+    </header>
+
+    <div class="dialog-body">
+      <input id="task-id" name="id" type="hidden">
+
+      <label class="field">
+        <span>标题</span>
+        <input id="task-title" name="title" type="text" required maxlength="200" placeholder="要做什么">
+      </label>
+
+      <label class="field">
+        <span>描述</span>
+        <textarea id="task-description" name="description" placeholder="可选，补充背景或验收标准"></textarea>
+      </label>
+
+      <div class="row">
+        <label class="field">
+          <span>项目</span>
+          <select id="task-project" name="project_id">
+            <option value="">私人任务（不挂项目）</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>状态</span>
+          <select id="task-status" name="status">
+            <option value="todo">待办</option>
+            <option value="in_progress">进行中</option>
+            <option value="blocked">阻塞</option>
+            <option value="done">已完成</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="row">
+        <label class="field">
+          <span>优先级</span>
+          <select id="task-priority" name="priority">
+            <option value="high">高</option>
+            <option value="medium" selected>中</option>
+            <option value="low">低</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>截止日期</span>
+          <input id="task-due-date" name="due_date" type="date">
+        </label>
+      </div>
+
+      <div class="row">
+        <label class="field">
+          <span>指派给</span>
+          <select id="task-assignee" name="assignee_id">
+            <option value="">未指派</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>标签（逗号分隔）</span>
+          <input id="task-tags" name="tags" type="text" placeholder="前端, 联调">
+        </label>
+      </div>
+
+      <p id="task-error" class="form-error hidden" role="alert"></p>
+    </div>
+
+    <footer class="dialog-foot">
+      <button id="task-delete" class="btn btn-danger spacer" type="button">删除</button>
+      <button class="btn btn-ghost" type="button" data-close>取消</button>
+      <button id="task-save" class="btn" type="submit">保存</button>
+    </footer>
+  </form>
+</dialog>
+
+<!-- ========== 成员管理弹窗 ========== -->
+<dialog id="member-modal" class="dialog" aria-labelledby="member-modal-title">
+  <header class="dialog-head">
+    <h2 id="member-modal-title">项目成员</h2>
+    <button id="member-close" class="icon-btn" type="button" data-close aria-label="关闭成员弹窗">×</button>
+  </header>
+
+  <div class="dialog-body">
+    <div class="row">
+      <label class="field">
+        <span>按邮箱邀请（对方必须已注册）</span>
+        <input id="member-email" type="email" placeholder="member@example.com">
+      </label>
+
+      <label class="field">
+        <span>角色</span>
+        <select id="member-role">
+          <option value="member" selected>成员</option>
+          <option value="owner">负责人</option>
+        </select>
+      </label>
+    </div>
+
+    <button id="member-invite" class="btn" type="button">发送邀请</button>
+    <p id="member-error" class="form-error hidden" role="alert"></p>
+    <ul id="member-rows" class="list"></ul>
+  </div>
+</dialog>
+
+<!-- ========== 全局提示 ========== -->
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+<noscript>
+  <p style="padding:16px;text-align:center">这个看板需要启用 JavaScript。</p>
+</noscript>
+
+<!-- 唯一入口：其余 js/* 由 app.js 动态 import -->
+<script type="module" src="/static/js/app.js"></script>
+</body>
+</html>
