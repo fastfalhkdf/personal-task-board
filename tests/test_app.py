@@ -1,4 +1,4 @@
-import json,os,tempfile,unittest
+﻿import json,os,tempfile,unittest
 from types import SimpleNamespace
 td=tempfile.mkdtemp(prefix="task-tests-");os.environ.update(DATABASE_URL=f"sqlite:///{td}/t.db",SILICONFLOW_API_KEY="test",JWT_SECRET="test")
 from fastapi.testclient import TestClient
@@ -9,7 +9,7 @@ class Fake:
  async def with_tools(self,messages,tools,temperature=.2):
   self.n+=1
   if self.n==1:
-   c=SimpleNamespace(id="c",function=SimpleNamespace(name="create_task",arguments=json.dumps({"project_id":1,"title":"复习 Agent","priority":"high"},ensure_ascii=False)));return SimpleNamespace(content=None,tool_calls=[c]),{}
+   c=SimpleNamespace(id="c",function=SimpleNamespace(name="create_task",arguments=json.dumps({"project_id":1,"title":"复习 Agent","priority":"high","due_date":"2026-12-31"},ensure_ascii=False)));return SimpleNamespace(content=None,tool_calls=[c]),{}
   return SimpleNamespace(content="任务待确认",tool_calls=None),{}
 class Tests(unittest.TestCase):
  @classmethod
@@ -26,3 +26,4 @@ class Tests(unittest.TestCase):
  def test_03_cross_user(self):
   self.login();s=os.urandom(3).hex();self.c.post("/api/auth/register",json={"email":f"x{s}@x.com","name":"X","password":"password1"});self.c.post("/api/auth/login",json={"email":f"x{s}@x.com","password":"password1"});self.assertEqual(self.c.get("/api/tasks/stats").json()["total"],0)
 if __name__=="__main__":unittest.main()
+

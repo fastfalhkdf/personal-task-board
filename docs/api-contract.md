@@ -1,9 +1,9 @@
-# 个人任务与项目看板 · API 契约
+﻿# 个人任务与项目看板 · API 契约
 
-版本 **V0.2** ｜ 2026-11-13 ｜ 骨架：戴罗轩；tasks 节：程熙
+版本 **V0.3** ｜ 2026-11-13 ｜ 骨架：戴罗轩；tasks 节：程熙；agent 节：郑伟健
 
 > 本文件是前后端联调的唯一接口事实源。改动先改本文件、群里同步、前端确认，再动代码。
-> 本版已写全 projects / members / tasks 三节；agent 节由郑伟健补。
+> 本版已写全 projects / members / board / tasks / agent 五节。
 
 ---
 
@@ -250,16 +250,139 @@ role 只能是 owner / member。响应 200：同 3.1 的单个成员对象。
 
 ---
 
-## 5. Agent 接口（郑伟健负责，待补全）
+## 5. Agent 接口（郑伟健负责，状态：已实现）
 
-> 现有 /api/agent/run、/api/agent/confirm 保留；新增 /pending、/cancel 等由郑伟健在本节补齐。
+> 对应实现：`app/routers/agent.py` + `app/tools.py` + `app/agent.py`；
+> 用例 `tests/test_agent_tools.py`（8 条，全部 Fake LLM 离线）。
 
-| 方法 | 路径 | 说明 | 状态 |
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | /api/agent/tools | 模型可见的工具契约（8 个，公开不用登录） |
+| POST | /api/agent/run | 跑一轮 Agent，返回答案 + 执行轨迹 + 待确认写操作 |
+| GET | /api/agent/pending | 我的待确认列表（刷新页面不丢） |
+| POST | /api/agent/confirm | 确认并执行，返回 diff；重复确认幂等 |
+| POST | /api/agent/cancel | 拒绝待确认，状态置 cancelled |
+
+### 5.1 POST /api/agent/run
+
+请求：
+
+~~~json
+{
+  "question": "把 Agent 练习移到进行中",
+  "max_steps": 6,
+  "history": [
+    {"role": "user", "content": "我有哪些任务"},
+    {"role": "assistant", "content": "你有 3 条任务：..."}
+  ]
+}
+~~~
+
+| 字段 | 类型 | 必填 | 约束 |
 |---|---|---|---|
-| POST | /api/agent/run | Agent 查询/操作 | 待郑伟健补全 |
-| POST | /api/agent/confirm | 确认写操作 | 待郑伟健补全 |
-| GET | /api/agent/pending | 待确认列表 | 待郑伟健补全 |
-| POST | /api/agent/cancel | 取消待确认 | 待郑伟健补全 |
+| question | string | 是 | 2–20000 字 |
+| max_steps | int | 否 | 1–10；服务端再按 `AGENT_MAX_STEPS` 夹一次，客户端传大无效 |
+| history | array | 否 | 只取 user/assistant 纯文本，裁剪到最近 10 轮（20 条） |
+
+响应 200：
+
+~~~json
+{
+  "ok": true,
+  "answer": "已准备好把「完成 Agent 练习」移到进行中，请确认。",
+  "steps": [
+    {"kind": "tool_call", "content": "{\"task_id\": 1}", "tool": "update_task", "args": {}, "ms": 0},
+    {"kind": "tool_result", "content": "{\"action_id\": \"...\"}", "tool": "update_task", "args": null, "ms": 0},
+    {"kind": "answer", "content": "已准备好...", "tool": null, "args": null, "ms": 0}
+  ],
+  "tool_calls": 1,
+  "total_ms": 1200,
+  "stopped_by": "answer",
+  "pending_writes": [
+    {
+      "id": "action-uuid",
+      "tool": "update_task",
+      "args": {"task_id": 1, "status": "in_progress"},
+      "before": {"id": 1, "status": "todo", "title": "完成 Agent 练习"},
+      "after": {"id": 1, "status": "in_progress", "title": "完成 Agent 练习"},
+      "expires_at": "2026-11-13T09:00:00"
+    }
+  ]
+}
+~~~
+
+`stopped_by` ∈ `answer`（模型自然收敛）/ `max_steps`（撞上限）。
+
+### 5.2 GET /api/agent/pending
+
+只返回 `status=pending` 且未过期的记录；顺手把过期项标成 `expired`。
+
+~~~json
+{"items": [{"id": "...", "tool": "create_task", "args": {...}, "before": {}, "after": {...}, "expires_at": "...", "status": "pending"}], "total": 1, "truncated": false}
+~~~
+
+### 5.3 POST /api/agent/confirm
+
+请求：`{"action_id": "..."}`；参数只存服务端，客户端改不了。
+
+响应 200：
+
+~~~json
+{
+  "ok": true,
+  "tool": "update_task",
+  "result": {
+    "ok": true,
+    "task_id": 1,
+    "diff": {
+      "before": {"status": "todo"},
+      "after": {"status": "in_progress"},
+      "changed": {"status": {"from": "todo", "to": "in_progress"}}
+    }
+  },
+  "before": {"status": "todo"},
+  "after": {"status": "in_progress"}
+}
+~~~
+
+| 情况 | 状态码 |
+|---|---|
+| 待确认不存在 / 不属于当前用户 | 404 |
+| 已执行（重复确认） | 200，返回首次结果（幂等） |
+| 已取消 | 409 |
+| 已过期 | 409 |
+| 执行失败 | 500（状态回滚为 pending，可重试） |
+
+### 5.4 POST /api/agent/cancel
+
+请求：`{"action_id": "..."}`；响应为被取消的那条记录，`status=cancelled`。
+重复取消返回同一状态；已执行的取消 → 409。
+
+### 5.5 工具契约（8 个，读写分离）
+
+| 工具 | 类型 | 关键参数 | 返回要点 |
+|---|---|---|---|
+| list_tasks | 读 | status/project_id/priority/tag/assignee_id/due_from/due_to/limit | items 含 project_name、assignee_name、tags；limit 夹在 1–50，超限 `truncated=true` |
+| get_task | 读 | task_id | 全字段，供 diff 预览 |
+| count_tasks | 读 | status/project_id/priority/assignee_id/due(today\|overdue\|week) | `{count}` |
+| get_task_stats | 读 | — | total/done/overdue/due_today/done_rate/by_status/by_project/by_member |
+| create_task | 写 | title+project_id+due_date **三件套必填**，另 description/priority/assignee_id/tags | 落待确认，不直接写库 |
+| update_task | 写 | task_id + 任意可改字段 | 拦截前先取 `before` 快照 |
+| list_projects | 读 | — | 当前用户参与的项目 + 角色 + 任务数 |
+| list_members | 读 | project_id（可选） | 成员姓名/邮箱/角色；非成员调用报错 |
+
+写工具（create_task / update_task）一律走确认流程；`AGENT_CONFIRM_WRITE=false` 时直接执行，仅供本地调试，不入仓库配置。
+
+### 5.6 错误分级
+
+| 情况 | 状态码 | detail |
+|---|---|---|
+| 未登录 | 401 | 请先登录 |
+| 未配置 LLM 密钥 | 503 | 未配置 LLM 密钥，请联系管理员 |
+| 上游超时 / 429 / 连接失败 | 502 | 模型服务暂不可用，请稍后重试 |
+| 其他执行异常 | 500 | Agent 执行失败 |
+
+对外不再回显上游原始报错（`§6.3` 要求）。
 
 ---
 
@@ -269,3 +392,5 @@ role 只能是 owner / member。响应 200：同 3.1 的单个成员对象。
 |---|---|---|
 | V0.1 | 2026-11-13 | 戴罗轩建骨架；写全 projects / members / board 三节；tasks、agent 留待对应负责人补齐 |
 | V0.2 | 2026-11-13 | 补全 tasks 节（程熙） |
+| V0.3 | 2026-11-13 | 补全 agent 节（郑伟健）：run/pending/cancel/confirm 契约、8 个工具、错误分级 |
+
