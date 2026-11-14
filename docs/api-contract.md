@@ -1,6 +1,6 @@
-# 个人任务与项目看板 · API 契约
+﻿# 个人任务与项目看板 · API 契约
 
-版本 **V0.4** ｜ 2026-11-14 ｜ 骨架：戴罗轩；tasks 节：程熙；agent 节：郑伟健
+版本 **V0.5** ｜ 2026-11-14 ｜ 骨架：戴罗轩；tasks 节：程熙；agent 节：郑伟健
 
 > 本文件是前后端联调的唯一接口事实源。改动先改本文件、群里同步、前端确认，再动代码。
 > 本版已写全 projects / members / board / tasks / agent 五节。
@@ -391,6 +391,61 @@ D2 联调提案：卡片补 assignee_name，前端徽标不再依赖串行成员
 
 ---
 
+### 5.7 diff 字段结构（前端渲染契约 · 郑伟健 → 付佳宝）
+
+`/run` 的 `pending_writes[]`、`/pending` 的 `items[]`、`/confirm` 的 `before/after`
+**由同一个函数生成**（`app/agent.py: after_preview`），三条链路形状保证一致，
+前端按一种结构渲染即可。
+
+**update_task（before 非空）—— after 与 before 同键，只替换 args 里出现的字段：**
+
+~~~json
+{
+  "before": {
+    "id": 1, "title": "完成 Agent 练习", "description": "", "status": "todo",
+    "priority": "high", "due_date": "2026-11-14", "project_id": 1,
+    "project_name": "AI 学习", "assignee_id": null, "assignee_name": null,
+    "completed_at": null, "tags": []
+  },
+  "after": {
+    "id": 1, "title": "完成 Agent 练习", "description": "", "status": "in_progress",
+    "priority": "high", "due_date": "2026-11-14", "project_id": 1,
+    "project_name": "AI 学习", "assignee_id": null, "assignee_name": null,
+    "completed_at": null, "tags": []
+  }
+}
+~~~
+
+**create_task（before 为空对象 `{}`）—— after 是规范化后的新记录预览，固定 8 个键：**
+
+~~~json
+{
+  "title": "整理 agent 接口文档", "description": "", "status": "todo",
+  "priority": "medium", "due_date": "2026-11-20", "project_id": 1,
+  "assignee_id": null, "tags": []
+}
+~~~
+
+**渲染规则（与 `js/pending.js` 现状一致）：**
+
+| 情况 | 渲染 |
+|---|---|
+| `before` 为空对象 | 展示 `args` 原文（create 类） |
+| `before` 非空 | 遍历 before ∪ after 的键，逐字段「旧 → 新」，值不同才高亮 |
+
+**字段类型：**
+
+| 字段 | 类型 | 备注 |
+|---|---|---|
+| `id` | int | 仅 update 类才有 |
+| `due_date` | string `YYYY-MM-DD` \| null | 空表示无截止日 |
+| `tags` | string[] | 已去重 |
+| `completed_at` | string(ISO) \| null | status=done 时才有值 |
+| `expires_at` | string(naive UTC) | 前端补 `Z` 再转本地展示，`pending.js` 已按此实现 |
+
+**状态机：** `pending` → `executed`（确认成功）/ `cancelled`（取消）/ `expired`（超时）。
+`confirm` 对非 `pending` 一律 409，其中已执行返回 200 + 首次结果（幂等），
+过期文案为「确认已过期，请重新发起操作」。
 ## 6. 修订记录
 
 | 版本 | 日期 | 变更 |
@@ -399,4 +454,8 @@ D2 联调提案：卡片补 assignee_name，前端徽标不再依赖串行成员
 | V0.2 | 2026-11-13 | 补全 tasks 节（程熙） |
 | V0.3 | 2026-11-13 | 补全 agent 节（郑伟健）：run/pending/cancel/confirm 契约、8 个工具、错误分级 |
 | V0.4 | 2026-11-14 | D2 联调：board 卡片增 assignee_name；项目/成员/看板三节状态更新；明确成员 id 与 user_id 口径 |
+| V0.5 | 2026-11-14 | D2 联调（郑伟健）：新增 §5.7 diff 字段结构（三条链路同源）、过期文案、状态机说明 |
+
+
+
 

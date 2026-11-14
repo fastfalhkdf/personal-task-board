@@ -63,7 +63,7 @@ class Result:
         return self.pending
 
 
-def _after_preview(name: str, args: dict, before: dict) -> dict:
+def after_preview(name: str, args: dict, before: dict) -> dict:
     """把「模型想改成什么」合并成一条可读的目标状态，供前端 diff。"""
     if name == "create_task":
         return {
@@ -203,7 +203,7 @@ async def run_agent(
                     )
                     continue
 
-                after = _after_preview(name, args, before)
+                after = after_preview(name, args, before)
                 now = dt.datetime.now(dt.UTC).replace(tzinfo=None)
                 action = PendingAction(
                     id=uuid.uuid4().hex,
