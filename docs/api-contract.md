@@ -1,6 +1,6 @@
-﻿# 个人任务与项目看板 · API 契约
+# 个人任务与项目看板 · API 契约
 
-版本 **V0.3** ｜ 2026-11-13 ｜ 骨架：戴罗轩；tasks 节：程熙；agent 节：郑伟健
+版本 **V0.4** ｜ 2026-11-14 ｜ 骨架：戴罗轩；tasks 节：程熙；agent 节：郑伟健
 
 > 本文件是前后端联调的唯一接口事实源。改动先改本文件、群里同步、前端确认，再动代码。
 > 本版已写全 projects / members / board / tasks / agent 五节。
@@ -57,7 +57,7 @@ Task 结构：
   "completed_at": null, "created_at": "...", "updated_at": "...", "tags": ["python"] }
 ```
 
-## 2. 项目接口（戴罗轩）
+## 2. 项目接口（戴罗轩，状态：已实现，D2 联调核对）
 
 ### 2.1 GET /api/projects
 
@@ -146,11 +146,12 @@ Task 结构：
 
 ---
 
-## 3. 成员接口（戴罗轩）
+## 3. 成员接口（戴罗轩，状态：已实现，D2 联调核对）
 
 ### 3.1 GET /api/projects/{id}/members
 
 项目成员可读成员列表。
+注意：items[].id 是 project_members 行 id，items[].user_id 才是任务指派/筛选使用的业务 id；前端指派下拉的 value 必须用 user_id。
 
 响应：
 
@@ -220,11 +221,12 @@ role 只能是 owner / member。响应 200：同 3.1 的单个成员对象。
 
 ---
 
-## 4. 看板接口（戴罗轩）
+## 4. 看板接口（戴罗轩，状态：已实现，D2 增补 assignee_name）
 
 ### 4.1 GET /api/board?project_id=<id>
 
 项目成员可读；一次返回四列卡片，供看板首屏渲染。
+D2 联调提案：卡片补 assignee_name，前端徽标不再依赖串行成员映射。
 
 响应：
 
@@ -238,13 +240,16 @@ role 只能是 owner / member。响应 200：同 3.1 的单个成员对象。
   "columns": {
     "todo": [
       {"id": 1, "title": "任务", "description": "", "status": "todo",
-       "priority": "medium", "due_date": "2026-11-20", "assignee_id": null,
+       "priority": "medium", "due_date": "2026-11-20",
+       "assignee_id": 2, "assignee_name": "付佳宝",
        "sort_order": 0, "tags": ["python"]}
     ],
     "in_progress": [], "blocked": [], "done": []
   }
 }
 ~~~
+
+字段说明：assignee_id 是 User.id；assignee_name 是展示名；未指派时两者均为 null。
 
 非成员/项目不存在 → 404。
 
@@ -393,4 +398,5 @@ role 只能是 owner / member。响应 200：同 3.1 的单个成员对象。
 | V0.1 | 2026-11-13 | 戴罗轩建骨架；写全 projects / members / board 三节；tasks、agent 留待对应负责人补齐 |
 | V0.2 | 2026-11-13 | 补全 tasks 节（程熙） |
 | V0.3 | 2026-11-13 | 补全 agent 节（郑伟健）：run/pending/cancel/confirm 契约、8 个工具、错误分级 |
+| V0.4 | 2026-11-14 | D2 联调：board 卡片增 assignee_name；项目/成员/看板三节状态更新；明确成员 id 与 user_id 口径 |
 
