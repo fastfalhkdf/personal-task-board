@@ -176,7 +176,20 @@ class MemberApiTests(unittest.TestCase):
 
     def test_08_project_stats_and_board(self):
         tok, _, _ = self._login("board-o")
+        _tok_m, uid_m, email_m = self._login("board-m")
         project = self._project(tok, "看板项目")
+        self.assertEqual(self._invite(tok, project["id"], email_m).status_code, 201)
+
+        # 指派下拉的数据源：成员列表必须同时给成员关系 id 和业务 user_id，
+        # 前端 PATCH assignee_id 只能用 user_id，不能用 members.id。
+        r = self.c.get(f"/api/projects/{project['id']}/members", headers=self._h(tok))
+        self.assertEqual(r.status_code, 200, r.text)
+        members = r.json()["items"]
+        target = next(item for item in members if item["user_id"] == uid_m)
+        self.assertEqual(target["email"], email_m)
+        self.assertEqual(target["role"], "member")
+        self.assertIn("id", target)
+
         r = self.c.post(
             "/api/tasks",
             json={
@@ -184,6 +197,7 @@ class MemberApiTests(unittest.TestCase):
                 "project_id": project["id"],
                 "priority": "high",
                 "due_date": (dt.date.today() + dt.timedelta(days=1)).isoformat(),
+                "assignee_id": uid_m,
                 "tags": ["test"],
             },
             headers=self._h(tok),
@@ -202,7 +216,11 @@ class MemberApiTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         board = r.json()
         self.assertEqual(board["project"]["id"], project["id"])
-        self.assertIn(task_id, [x["id"] for x in board["columns"]["todo"]], board)
+        self.assertEqual(set(board["columns"]), {"todo", "in_progress", "blocked", "done"})
+        card = next(x for x in board["columns"]["todo"] if x["id"] == task_id)
+        self.assertEqual(card["assignee_id"], uid_m)
+        self.assertEqual(card["assignee_name"], "board-m")
+        self.assertEqual(card["tags"], ["test"])
 
 
 if __name__ == "__main__":

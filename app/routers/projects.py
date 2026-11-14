@@ -79,6 +79,11 @@ def _project_out(db: Session, project: Project, role: str) -> dict:
 
 def _task_card(db: Session, task: Task) -> dict:
     tags = db.execute(select(TaskTag.tag).where(TaskTag.task_id == task.id)).scalars().all()
+    assignee_name = None
+    if task.assignee_id is not None:
+        # 看板卡片直接带姓名，避免前端为了一个徽标再串行拉成员列表。
+        assignee = db.get(User, task.assignee_id)
+        assignee_name = assignee.name if assignee else None
     return {
         "id": task.id,
         "title": task.title,
@@ -87,6 +92,7 @@ def _task_card(db: Session, task: Task) -> dict:
         "priority": task.priority,
         "due_date": task.due_date.isoformat() if task.due_date else None,
         "assignee_id": task.assignee_id,
+        "assignee_name": assignee_name,
         "sort_order": task.sort_order,
         "tags": list(tags),
     }
