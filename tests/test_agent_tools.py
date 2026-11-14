@@ -241,6 +241,50 @@ class AgentToolTests(unittest.TestCase):
         self.assertIn("项目", results[0]["error"])
         self.assertEqual(payload["pending_writes"], [], "越权项目不该生成待确认")
 
+    # ---- 10. 过期后确认返回 409，且 /pending 不再列出 ----
+    def test_10_expired_confirm_returns_409(self):
+        from app.config import get_settings
+
+        settings = get_settings()
+        old_ttl = settings.agent_confirm_ttl_minutes
+        settings.agent_confirm_ttl_minutes = 0
+        try:
+            payload = self._run(
+                [
+                    call(
+                        "create_task",
+                        {"project_id": 1, "title": "过期任务", "due_date": "2026-12-06"},
+                    ),
+                    say("请确认"),
+                ]
+            )
+        finally:
+            settings.agent_confirm_ttl_minutes = old_ttl
+
+        action_id = payload["pending_writes"][0]["id"]
+        listed = self.client.get("/api/agent/pending").json()
+        self.assertEqual(listed["total"], 0, "过期项不该出现在待确认列表")
+        confirm = self.client.post("/api/agent/confirm", json={"action_id": action_id})
+        self.assertEqual(confirm.status_code, 409)
+        self.assertIn("过期", confirm.json()["detail"])
+
+    # ---- 11. /run 与 /pending 的 before/after 形状必须一致 ----
+    def test_11_after_shape_matches_between_run_and_pending(self):
+        task = self.client.get("/api/tasks").json()["items"][0]
+        payload = self._run(
+            [call("update_task", {"task_id": task["id"], "priority": "high"}), say("请确认")]
+        )
+        from_run = payload["pending_writes"][0]
+        from_pending = self.client.get("/api/agent/pending").json()["items"][0]
+        self.assertEqual(from_run["before"], from_pending["before"])
+        self.assertEqual(from_run["after"], from_pending["after"])
+        self.assertEqual(
+            set(from_run["after"].keys()),
+            set(from_run["before"].keys()),
+            "update 类 after 必须与 before 同键，前端才能逐字段渲染",
+        )
+        self.assertEqual(from_run["after"]["priority"], "high")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..agent import run_agent
+from ..agent import after_preview, run_agent
 from ..auth import current_user
 from ..config import get_settings
 from ..db import get_session
@@ -95,9 +95,8 @@ def _parse(raw: str | None) -> dict:
 def _pending_item(row: PendingAction) -> PendingItemOut:
     args = _parse(row.args_json)
     before = _parse(row.before_json)
-    after = dict(before)
-    for key, value in args.items():
-        after[key] = value
+    # 与 /run 的 pending_writes 用同一个预览函数，保证两条链路 after 形状一致
+    after = after_preview(row.tool, args, before)
     return PendingItemOut(
         id=row.id,
         tool=row.tool,
@@ -259,6 +258,8 @@ def confirm(
         )
     if row.status == "cancelled":
         raise HTTPException(409, "该操作已被取消")
+    if row.status == "expired":
+        raise HTTPException(409, "确认已过期，请重新发起操作")
     if row.status != "pending":
         raise HTTPException(409, f"当前状态 {row.status} 不能执行")
 
@@ -286,16 +287,13 @@ def confirm(
     done = db.get(PendingAction, row.id)
     if done is None:
         raise HTTPException(500, "写操作已完成，但确认记录丢失")
-    after = _parse(done.args_json)
-    merged = dict(before)
-    for key, value in after.items():
-        merged[key] = value
+    merged = after_preview(done.tool, _parse(done.args_json), before)
     diff = {
         "before": before,
         "after": merged,
         "changed": {
             key: {"from": before.get(key), "to": value}
-            for key, value in after.items()
+            for key, value in merged.items()
             if before.get(key) != value
         },
     }
