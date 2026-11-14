@@ -1,53 +1,87 @@
-// 对话抽屉与工具轨迹（设计方案 §7.1，付佳宝名下）
-// 只拆分不改行为：提问 → /api/agent/run → 回答 + 轨迹折叠 + 交给 pending 渲染待确认卡片。
-// renderPending 由挂载方（js/app.js）注入，本模块不 import pending.js，避免互相等待。
-import { request } from '../request.js';
+/**
+ * 对话抽屉与工具轨迹（设计方案 §7.1 js/chat.js，付佳宝）。
+ *
+ * - init(ctx) 挂载契约同 js/app.js（D1 自造的参数契约已废弃）；
+ * - 携带最近 10 轮 history（契约 §5.1，服务端无状态，不建会话表）；
+ * - 待确认卡片交 pending.js 渲染：动态 import，pending.js 出错不拖垮对话（互不等待）。
+ */
+import api from './api.js';
 
-function toast(message) {
-  const el = document.querySelector('#toast');
-  el.textContent = message;
-  el.classList.remove('hidden');
-  setTimeout(() => el.classList.add('hidden'), 2500);
+/** 最近 10 轮 = user/assistant 各 10 条（契约 §5.1 的裁剪规则）。 */
+const HISTORY_LIMIT = 20;
+
+let ctx = null;
+let bound = false;
+const history = [];
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[char]);
 }
 
 function appendMessage(role, text) {
+  const box = document.querySelector('#messages');
+  if (!box) return;
   const node = document.createElement('div');
   node.className = `msg ${role}`;
   node.textContent = text;
-  const box = document.querySelector('#messages');
   box.appendChild(node);
   box.scrollTop = box.scrollHeight;
 }
 
 function renderTrace(result) {
-  document.querySelector('#trace').innerHTML =
-    `<summary>调用轨迹 ${result.tool_calls} 次</summary>` +
-    (result.steps || [])
-      .map(step => `<div>${step.kind} ${step.tool || ''}<br>${step.content}</div>`)
-      .join('');
+  const trace = document.querySelector('#trace');
+  if (!trace) return;
+  const steps = (result.steps || [])
+    .map(
+      (step) =>
+        `<div>${escapeHtml(step.kind)} ${escapeHtml(step.tool || '')}<br>${escapeHtml(
+          step.content,
+        )}</div>`,
+    )
+    .join('');
+  trace.innerHTML = `<summary>调用轨迹 ${Number(result.tool_calls) || 0} 次</summary>${steps}`;
 }
 
-export function init({ renderPending } = {}) {
-  const $ = s => document.querySelector(s);
+function pushHistory(role, content) {
+  history.push({ role, content });
+  if (history.length > HISTORY_LIMIT) history.splice(0, history.length - HISTORY_LIMIT);
+}
 
-  async function send() {
-    const question = $('#question').value.trim();
-    if (!question) return;
-    appendMessage('user', question);
-    $('#question').value = '';
+async function send() {
+  const input = document.querySelector('#question');
+  const question = (input?.value || '').trim();
+  if (!question) return;
+  appendMessage('user', question);
+  pushHistory('user', question);
+  if (input) input.value = '';
+  try {
+    const result = await api.agent.run(question, history);
+    appendMessage('assistant', result.answer);
+    pushHistory('assistant', result.answer);
+    renderTrace(result);
     try {
-      const result = await request('/api/agent/run', {
-        method: 'POST',
-        body: { question, max_steps: 6 },
-        timeout: 60000,
-      });
-      appendMessage('assistant', result.answer);
-      renderTrace(result);
-      if (renderPending) renderPending(result.pending_writes);
+      const pending = await import('./pending.js');
+      // 优先按服务端列表回拉（含此前未处理的）；拉不到就用本次响应兜底，保证卡片不丢
+      await pending
+        .refreshFromServer()
+        .catch(() => pending.render && pending.render(result.pending_writes || []));
     } catch (error) {
-      appendMessage('assistant', `失败：${error.message}`);
+      console.warn('[chat] pending.js 未就绪，待确认卡片暂不可用', error);
     }
+  } catch (error) {
+    appendMessage('assistant', `失败：${(error && error.message) || '请求出错'}`);
   }
+}
 
-  $('#send').onclick = send;
+export function init(context) {
+  ctx = context;
+  if (bound) return;
+  bound = true;
+  document.querySelector('#send')?.addEventListener('click', send);
 }
