@@ -94,7 +94,8 @@ function renderBars(tasks, stats) {
     return projectNames.get(String(task.project_id)) || '其他项目';
   });
 
-  const memberNames = new Map(getMembers().map((member) => [String(member.id), member.name]));
+  // 成员的唯一键是 user_id（与 tasks.assignee_id 同源，契约 §3.1）
+  const memberNames = new Map(getMembers().map((member) => [String(member.user_id), member.name]));
   const memberRows = countBy(tasks, (task) => {
     if (!task.assignee_id) return UNSET;
     return memberNames.get(String(task.assignee_id)) || UNSET;

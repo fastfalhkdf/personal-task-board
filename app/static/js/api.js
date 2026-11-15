@@ -153,11 +153,11 @@ export const projects = {
   },
 
   /**
-   * 删除项目（仅 owner）。级联删任务的二次确认参数原样透传，
-   * 具体键名以 docs/api-contract.md 的 projects 节为准，例如 { confirm_tasks: true }。
+   * 删除项目（仅 owner）。契约 §2.4：必须显式带 `confirm=true`，缺省/false 返回 400。
+   * 用法：projects.remove(3, { confirm: true })
    * @param {number|string} id @param {Record<string, unknown>} params
    */
-  remove(id, params = {}) {
+  remove(id, params = { confirm: true }) {
     return request(`/api/projects/${id}` + query(params), { method: 'DELETE' });
   },
 

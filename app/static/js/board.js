@@ -29,11 +29,11 @@ const MOCK_PROJECTS = [
 ];
 
 const MOCK_MEMBERS = [
-  { id: 1, name: '卓江城' },
-  { id: 2, name: '付佳宝' },
-  { id: 3, name: '程熙' },
-  { id: 4, name: '郑伟健' },
-  { id: 5, name: '戴罗轩' },
+  { id: 1, user_id: 1, name: '卓江城' },
+  { id: 2, user_id: 2, name: '付佳宝' },
+  { id: 3, user_id: 3, name: '程熙' },
+  { id: 4, user_id: 4, name: '郑伟健' },
+  { id: 5, user_id: 5, name: '戴罗轩' },
 ];
 
 /** 按 design §4.2 的字段造数据：含 assignee/tags/sort_order，字段跟契约保持一致。 */
@@ -178,13 +178,20 @@ function escapeHtml(value) {
 /* ---------- 数据 ---------- */
 
 async function loadTasks() {
-  if (USE_MOCK) return MOCK_TASKS;
-  // 契约：GET /api/board?project_id= 一次取回四列；兼容只回 {items:[...]} 的实现。
-  const payload = await api.board.get(state.projectId || undefined);
-  if (payload && payload.columns) {
-    return COLUMNS.flatMap((column) => payload.columns[column.status] || []);
+  if (USE_MOCK) return MOCK_TASKS.map(decorateTask);
+  if (state.projectId) {
+    // 契约 §4.1：GET /api/board?project_id= 一次取回四列；兼容只回 {items:[...]} 的实现。
+    const payload = await api.board.get(state.projectId);
+    const rows = payload && payload.columns
+      ? COLUMNS.flatMap((column) => payload.columns[column.status] || [])
+      : api.asList(payload).items;
+    await ensureMemberCache(rows);
+    return rows.map(decorateTask);
   }
-  return api.asList(payload).items;
+  // 看板快照是按项目取的（project_id 必填），没选项目时退回任务列表。
+  const result = await api.tasks.list({ limit: 200 });
+  await ensureMemberCache(result.items);
+  return result.items.map(decorateTask);
 }
 
 async function loadProjects() {
@@ -195,7 +202,10 @@ async function loadProjects() {
 async function loadMembers() {
   if (USE_MOCK) return MOCK_MEMBERS;
   if (!state.projectId) return [];
-  return api.members.list(state.projectId);
+  // 契约 §3.1 回 {items, total, truncated}；不套 asList 直接 map 会 TypeError（付佳宝/戴罗轩都提过）。
+  const rows = api.asList(await api.members.list(state.projectId)).items;
+  memberCache.set(String(state.projectId), rows);
+  return rows;
 }
 
 function projectName(projectId) {
@@ -203,9 +213,58 @@ function projectName(projectId) {
   return project ? project.name : '';
 }
 
-function memberName(memberId) {
-  const member = state.members.find((item) => Number(item.id) === Number(memberId));
+/** 每个项目的成员表缓存：project_id -> 成员行（含 user_id/name），用于把 assignee_id 映射成姓名。 */
+const memberCache = new Map();
+
+/**
+ * 服务端 Task / 看板卡片只回 assignee_id、不回 assignee_name（契约 §1、§4.1），
+ * 卡片要显示指派人与项目名，这里用本地成员表补齐。
+ * 拉成员要按项目来：先把涉及的项目成员拉一遍（有缓存），避免"全部项目"视图下徽标空白。
+ */
+async function ensureMemberCache(tasks) {
+  const projectIds = new Set();
+  tasks.forEach((task) => {
+    const id = task.project_id != null ? String(task.project_id) : String(state.projectId || '');
+    if (id) projectIds.add(id);
+  });
+  const missing = [...projectIds].filter((id) => !memberCache.has(id));
+  await Promise.all(
+    missing.map(async (id) => {
+      try {
+        memberCache.set(id, api.asList(await api.members.list(id)).items);
+      } catch (error) {
+        memberCache.set(id, []);
+        console.warn('[board] 成员列表拉取失败：', id, error);
+      }
+    }),
+  );
+}
+
+/** 成员唯一标识用 user_id（project_members.id 只在成员接口内部用，不能当 assignee_id）。 */
+function findMember(projectId, userId) {
+  if (!userId) return null;
+  const cached = memberCache.get(String(projectId));
+  const pool = cached && cached.length ? cached : state.members;
+  return pool.find((item) => Number(item.user_id) === Number(userId)) || null;
+}
+
+function memberName(projectId, userId) {
+  const member = findMember(projectId, userId);
   return member ? member.name : '';
+}
+
+function decorateTask(task) {
+  // 看板卡片对象里没有 project_id（整列都属于该项目），用当前选中的项目补上，
+  // 否则 matchFilters 的 project 判断会把卡片全滤掉（真机模式实测踩过）。
+  const projectId = task.project_id != null ? task.project_id : state.projectId || null;
+  const member = findMember(projectId, task.assignee_id);
+  const project = state.projects.find((item) => Number(item.id) === Number(projectId));
+  return {
+    ...task,
+    project_id: projectId,
+    assignee_name: task.assignee_name || (member ? member.name : ''),
+    project_name: task.project_name || (project ? project.name : ''),
+  };
 }
 
 function nextMockId() {
@@ -230,7 +289,7 @@ async function saveTask({ id, payload, mode }) {
         ...payload,
         id: nextMockId(),
         project_name: projectName(payload.project_id),
-        assignee_name: memberName(payload.assignee_id),
+        assignee_name: memberName(payload.project_id, payload.assignee_id),
         sort_order: nextSortOrder(payload.status),
       });
     } else {
@@ -238,7 +297,7 @@ async function saveTask({ id, payload, mode }) {
       if (!task) throw new Error('任务不存在');
       Object.assign(task, payload, {
         project_name: projectName(payload.project_id),
-        assignee_name: memberName(payload.assignee_id),
+        assignee_name: memberName(payload.project_id, payload.assignee_id),
       });
     }
   } else if (mode === 'create') {
@@ -659,7 +718,7 @@ function notifyTasksChanged() {
   });
 }
 
-/** 把 mock/真实成员填进筛选栏和弹窗的指下拉。 */
+/** 把 mock/真实成员填进筛选栏和弹窗的指派下拉（值统一用 user_id，与 tasks.assignee_id 同源）。 */
 function renderMemberOptions() {
   const select = document.querySelector('#filter-assignee');
   if (!select) return;
@@ -667,7 +726,8 @@ function renderMemberOptions() {
   select.innerHTML = ['<option value="">全部成员</option>', '<option value="me">仅看我</option>']
     .concat(
       state.members.map(
-        (member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.name)}</option>`,
+        (member) =>
+          `<option value="${escapeHtml(member.user_id)}">${escapeHtml(member.name)}</option>`,
       ),
     )
     .join('');
