@@ -14,7 +14,7 @@
 import api from './api.js';
 import { cardHtml, mountEditor } from './task-card.js';
 
-const USE_MOCK = true;
+const USE_MOCK = false;  // 真机模式：/api/board D1 已上线（按本文件 L9 说明切换，验收10收口）
 
 const COLUMNS = [
   { status: 'todo', title: '待办' },
