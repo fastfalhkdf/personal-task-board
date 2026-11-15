@@ -195,7 +195,8 @@ export function openEditor(task, { defaultStatus = 'todo' } = {}) {
   fillSelect(
     '#task-assignee',
     [{ value: '', label: '未指派' }].concat(
-      members.map((member) => ({ value: member.id, label: member.name })),
+      // 指派值用 user_id：PATCH /api/tasks 校验的是 ProjectMember.user_id（契约 §1/§3.1）
+      members.map((member) => ({ value: member.user_id, label: member.name })),
     ),
     editing ? task.assignee_id : '',
   );
