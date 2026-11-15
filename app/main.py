@@ -6,17 +6,32 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect
-from .config import get_settings
+from .config import Settings, get_settings
 from .db import Base, db_note, get_engine, get_sessionmaker, init_db
 from .routers import agent, auth, members, projects, tasks
 from .seed import seed
 
 BASE_DIR = Path(__file__).resolve().parent
 
+_DEV_ENVS = {"local", "dev", "development", "test"}
+_DEFAULT_SECRETS = {"task-secret", "change-this-in-production", ""}
+
+
+def require_strong_secret(s: Settings) -> None:
+    """D3 收尾项（设计方案 §10）：非开发环境禁用默认密钥，否则拒绝启动。"""
+    if s.app_env.strip().lower() in _DEV_ENVS:
+        return
+    if s.jwt_secret in _DEFAULT_SECRETS:
+        raise RuntimeError(
+            f"APP_ENV={s.app_env} 下 JWT_SECRET 仍是默认值，拒绝启动。"
+            "请在 .env 或 compose 环境变量中设置强随机密钥。"
+        )
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     s = get_settings()
+    require_strong_secret(s)
     e = init_db(s)
     Base.metadata.create_all(bind=e)
     with get_sessionmaker()() as db:
