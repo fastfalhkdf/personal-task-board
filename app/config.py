@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
     siliconflow_api_key: str = ""
     openai_base_url: str = "https://api.siliconflow.cn/v1"
-    model_chat: str = "Qwen/Qwen2.5-7B-Instruct"
+    model_chat: str = "deepseek-ai/DeepSeek-V4.1-Flash"
     app_env: str = "local"
     port: int = 8000
     database_url: str = "sqlite:///./data/task_board.db"
