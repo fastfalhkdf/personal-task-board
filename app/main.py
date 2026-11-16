@@ -58,3 +58,12 @@ def health():
     s = get_settings()
     e = get_engine()
     return {"ok": True, "tables": sorted(inspect(e).get_table_names()), "db_note": db_note()}
+
+
+@app.middleware("http")
+async def no_cache_static(request, call_next):
+    """静态资源与首页不走浏览器缓存（否则旧版 JS 会让新功能"点了没反应"）。"""
+    response = await call_next(request)
+    if request.url.path.startswith("/static/") or request.url.path == "/":
+        response.headers["Cache-Control"] = "no-cache"
+    return response
