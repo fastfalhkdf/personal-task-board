@@ -34,10 +34,18 @@ SYSTEM = """你是「个人任务与项目看板」的助手，能查询和修�
 工作方式：
 - 数量、完成率、逾期、今日待办这类问题，一律调用工具查真实数据库，不许凭空回答；
 - 一次可以并行调用多个互不依赖的工具；
-- 新建和修改任务会被系统拦截，等你调用后由用户点确认才真正写库，这是正常流程，
-  你只需要把「我已准备好，请确认」告诉用户即可；
+- 新建和修改任务会被系统拦截成「待确认单」，用户点确认后才真正写库——这是正常流程。
+  顺序必须是：先调用工具（先 list_tasks 定位，再 update_task/create_task 生成待确认单），
+  工具调用之后才回复用户「我已准备好，请确认」；没有调用过工具时禁止说这句话；
 - 工具返回空结果时如实说「没找到」，不要编造；
-- 回答用简洁中文，不要复述整段 JSON。"""
+- 回答用简洁中文，不要复述整段 JSON。
+
+示例：
+用户：把「写周报」移到进行中
+你：调用 list_tasks 找到「写周报」→ 调用 update_task(status=in_progress)
+    → 系统生成待确认单后回复：已准备把「写周报」改为进行中，请确认。
+用户：今天要做什么
+你：调用 list_tasks 查今天到期的待办 → 用一句话汇总真实结果。"""
 
 
 @dataclass
@@ -129,6 +137,7 @@ async def run_agent(
     pending: list[dict] = []
     started = time.perf_counter()
     calls = 0
+    nudged = False
 
     for _ in range(limit):
         msg, _meta = await llm.with_tools(messages, SPECS, temperature=0.2)
@@ -136,6 +145,19 @@ async def run_agent(
 
         if not tool_calls:
             text = msg.content or ""
+            # 护栏：小模型常见失误——没调工具就直接说确认话术，纠正一次再给机会
+            if not pending and not nudged and ("请确认" in text or "准备好" in text):
+                nudged = True
+                steps.append(Step("thought", "模型未调用工具就回复了确认话术，自动纠正重试"))
+                messages.append({"role": "assistant", "content": text})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "系统提示：你还没有调用任何工具。必须先调用 list_tasks 定位任务，"
+                        "再调用 update_task 生成待确认单；调用工具之前不要说确认话术。",
+                    }
+                )
+                continue
             steps.append(Step("answer", text))
             return Result(
                 text, steps, calls, int((time.perf_counter() - started) * 1000), "answer", pending
@@ -190,7 +212,10 @@ async def run_agent(
 
                 before = snapshot(db, name, args, uid)
                 if name == "update_task" and not before:
-                    result = {"error": "任务不存在或无权修改"}
+                    result = {
+                        "error": "任务不存在或无权修改。你必须先调用 list_tasks（可用标题关键字）"
+                        "拿到真实的 task_id 再重试 update_task；task_id 只能来自工具返回，禁止编造。"
+                    }
                     steps.append(
                         Step("tool_result", json.dumps(result, ensure_ascii=False), tool=name)
                     )

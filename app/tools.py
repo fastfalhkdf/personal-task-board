@@ -99,8 +99,8 @@ SPECS = [
     ),
     tool_spec(
         "update_task",
-        "修改已有任务。改动前必须先 list_tasks/get_task 唯一定位；定位不唯一就反问用户，不要猜。"
-        "只传需要改的字段。",
+        "修改已有任务。改动前必须先用 list_tasks/get_task 唯一定位；定位不唯一就反问用户。"
+        "task_id 必须来自 list_tasks/get_task 的返回值，禁止凭空编造。只传需要改的字段。",
         {
             "task_id": {"type": "integer"},
             "title": {"type": "string"},
