@@ -689,8 +689,15 @@
         <span>密码</span>
         <input id="password" name="password" type="password" autocomplete="current-password" value="demo1234">
       </label>
+      <label class="field hidden" id="name-field">
+        <span>昵称</span>
+        <input id="name" name="name" type="text" autocomplete="nickname" placeholder="怎么称呼你">
+      </label>
       <p id="auth-error" class="form-error hidden" role="alert"></p>
       <button id="login" class="btn" type="button">登录</button>
+      <p class="auth-switch">
+        <button id="auth-toggle" class="btn btn-ghost" type="button">还没有账号？注册</button>
+      </p>
     </div>
 
     <p class="auth-hint">
