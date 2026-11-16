@@ -644,9 +644,54 @@ function wireProjectSwitch() {
     refresh().catch((error) => state.ctx.toast(error.message));
   });
 
-  // 项目 CRUD 是戴罗轩的 /api/projects，接口未落地前先如实提示，不做假的新建。
+  // 新建项目：弹窗收集名称 → POST /api/projects → 刷新侧栏并切到新项目。
+  // （原为“等 /api/projects 落地”的提示桩——接口 D1 已上线，此处接线。）
   document.querySelector('#project-new')?.addEventListener('click', () => {
-    state.ctx.toast('项目新建等 /api/projects 接口落地后再接');
+    const input = document.querySelector('#project-name');
+    const err = document.querySelector('#project-error');
+    if (input) input.value = '';
+    if (err) {
+      err.textContent = '';
+      err.classList.add('hidden');
+    }
+    document.querySelector('#project-modal')?.showModal();
+    input?.focus();
+  });
+
+  document.querySelector('#project-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const input = document.querySelector('#project-name');
+    const err = document.querySelector('#project-error');
+    const name = (input?.value || '').trim();
+    const showErr = (message) => {
+      if (err) {
+        err.textContent = message;
+        err.classList.remove('hidden');
+      }
+    };
+    if (err) err.classList.add('hidden');
+    if (!name) {
+      showErr('请填写项目名称');
+      return;
+    }
+    const button = document.querySelector('#project-save');
+    if (button) button.disabled = true;
+    try {
+      const created = await api.projects.create({ name });
+      document.querySelector('#project-modal')?.close();
+      state.projects = await loadProjects();
+      renderProjects();
+      const select = document.querySelector('#project-switcher');
+      if (select) {
+        select.value = String(created.id);
+        select.dispatchEvent(new Event('change'));
+      }
+      state.ctx.toast(`项目「${created.name}」已创建`);
+    } catch (error) {
+      showErr((error && error.message) || '创建失败');
+    } finally {
+      if (button) button.disabled = false;
+    }
   });
 }
 

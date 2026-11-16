@@ -946,6 +946,27 @@
   </form>
 </dialog>
 
+<!-- ========== 新建项目弹窗 ========== -->
+<dialog id="project-modal" class="dialog" aria-labelledby="project-modal-title">
+  <form id="project-form">
+    <header class="dialog-head">
+      <h2 id="project-modal-title">新建项目</h2>
+      <button class="icon-btn" type="button" data-close aria-label="关闭新建项目弹窗">×</button>
+    </header>
+    <div class="dialog-body">
+      <label class="field">
+        <span>项目名称</span>
+        <input id="project-name" name="name" type="text" maxlength="120" placeholder="例如：软件工程课设" autocomplete="off">
+      </label>
+      <p id="project-error" class="form-error hidden" role="alert"></p>
+    </div>
+    <footer class="dialog-foot">
+      <button class="btn btn-ghost" type="button" data-close>取消</button>
+      <button id="project-save" class="btn" type="submit">创建</button>
+    </footer>
+  </form>
+</dialog>
+
 <!-- ========== 成员管理弹窗 ========== -->
 <dialog id="member-modal" class="dialog" aria-labelledby="member-modal-title">
   <header class="dialog-head">
